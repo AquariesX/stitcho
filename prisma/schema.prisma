@@ -1,0 +1,228 @@
+datasource db {
+  provider = "mysql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  TAILOR
+  CUSTOMER
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  PROCESSING
+  COMPLETED
+  CANCELLED
+}
+
+enum MeasurementType {
+  STANDARD
+  CUSTOM
+}
+
+enum MeasurementScale {
+  INCH
+  CM
+}
+
+enum PaymentStatus {
+  REQUIRES_PAYMENT
+  PAID
+  FAILED
+}
+  
+model User {
+  id           Int            @id @default(autoincrement())
+  firebaseUid  String         @unique @db.VarChar(128)
+  name         String         @db.VarChar(100)
+  email        String?        @db.VarChar(120)
+  phoneNumber  String?        @db.VarChar(20)
+  role         Role
+  isActive     Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  measurements Measurement[]
+  orders       Order[]
+
+  @@map("users")
+}
+
+model Category {
+  id        Int       @id @default(autoincrement())
+  name      String    @db.VarChar(80)
+  code      String    @unique @db.VarChar(20)
+  imageUrl  String    @db.VarChar(500)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  products  Product[]
+  fabrics   Fabric[]
+
+  @@map("categories")
+}
+
+model Product {
+  id         Int      @id @default(autoincrement())
+  categoryId Int
+  name       String   @db.VarChar(120)
+  code       String   @unique @db.VarChar(30)
+  imageUrl   String   @db.VarChar(500)
+  basePrice  Decimal  @db.Decimal(10, 2)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  fabrics    Fabric[]
+  orders     Order[]
+
+  @@index([categoryId])
+  @@map("products")
+}
+
+model Fabric {
+  id         Int      @id @default(autoincrement())
+  categoryId Int
+  productId  Int
+  name       String   @db.VarChar(100)
+  imageUrl   String   @db.VarChar(500)
+  price      Decimal  @db.Decimal(8, 2) // usually fabrics are cheaper than full product
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  orders     Order[]
+
+  @@index([categoryId])
+  @@index([productId])
+  @@map("fabrics")
+}
+
+model Color {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(60)
+  hexCode   String   @db.Char(7) // #RRGGBB format
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders    Order[]
+
+  @@map("colors")
+}
+
+model Style {
+  id        Int           @id @default(autoincrement())
+  name      String        @db.VarChar(80)
+  imageUrl  String        @db.VarChar(500)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  options   StyleOption[]
+
+  @@map("styles")
+}
+
+model StyleOption {
+  id              Int          @id @default(autoincrement())
+  styleId         Int
+  name            String       @db.VarChar(100)
+  imageUrl        String       @db.VarChar(500)
+  additionalPrice Decimal      @db.Decimal(8, 2) @default(0.00)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  style           Style        @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  orderStyles     OrderStyle[]
+
+  @@index([styleId])
+  @@map("style_options")
+}
+
+model Measurement {
+  id              Int              @id @default(autoincrement())
+  label           String           @db.VarChar(50) // S, M, L, XL, Custom name...
+  neck            Decimal          @db.Decimal(5, 2)
+  chest           Decimal          @db.Decimal(5, 2)
+  stomach         Decimal          @db.Decimal(5, 2)
+  length          Decimal          @db.Decimal(5, 2) // usually called "shirt length" or "dress length"
+  shoulder        Decimal          @db.Decimal(5, 2)
+  sleeve          Decimal          @db.Decimal(5, 2)
+  scale           MeasurementScale
+  type            MeasurementType
+  createdByUserId Int
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  createdBy       User             @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  orders          Order[]
+
+  @@index([createdByUserId])
+  @@map("measurements")
+}
+
+model Order {
+  id              Int           @id @default(autoincrement())
+  customerId      Int
+  productId       Int
+  fabricId        Int
+  colorId         Int
+  measurementId   Int
+  totalPrice      Decimal       @db.Decimal(12, 2)
+  status          OrderStatus   @default(PENDING)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  customer        User          @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  product         Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  fabric          Fabric        @relation(fields: [fabricId], references: [id], onDelete: Restrict)
+  color           Color         @relation(fields: [colorId], references: [id], onDelete: Restrict)
+  measurement     Measurement   @relation(fields: [measurementId], references: [id], onDelete: Restrict)
+
+  orderStyles     OrderStyle[]
+  payment         Payment?
+
+  @@index([customerId])
+  @@index([productId])
+  @@index([fabricId])
+  @@index([colorId])
+  @@index([measurementId])
+  @@map("orders")
+}
+
+model OrderStyle {
+  id            Int          @id @default(autoincrement())
+  orderId       Int
+  styleOptionId Int
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  order         Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  styleOption   StyleOption  @relation(fields: [styleOptionId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, styleOptionId]) // prevent duplicate style options in same order
+  @@index([orderId])
+  @@index([styleOptionId])
+  @@map("order_styles")
+}
+
+model Payment {
+  id                    Int           @id @default(autoincrement())
+  orderId               Int           @unique
+  stripePaymentIntentId String        @db.VarChar(255)
+  amount                Decimal       @db.Decimal(12, 2)
+  currency              String        @default("PKR") @db.Char(3)
+  status                PaymentStatus @default(REQUIRES_PAYMENT)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  order                 Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("payments")
+}
