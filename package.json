@@ -10,10 +10,11 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
-    "@prisma/client": "^7.2.0",
+    "@prisma/client": "6.0.0",
     "clsx": "^2.1.1",
     "dotenv": "^17.2.3",
     "firebase": "^12.7.0",
+    "firebase-admin": "^13.6.0",
     "framer-motion": "^12.25.0",
     "lucide-react": "^0.562.0",
     "next": "16.1.1",
@@ -22,14 +23,13 @@
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
-    "@prisma/config": "^7.2.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
-    "prisma": "^7.2.0",
+    "prisma": "6.0.0",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5"

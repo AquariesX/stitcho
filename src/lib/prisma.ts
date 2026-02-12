@@ -10,7 +10,9 @@ import { PrismaClient } from '@prisma/client';
 // Use the singleton pattern to avoid multiple instances in development
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
-export const prisma = globalForPrisma.prisma || new PrismaClient(); // Note: Might need adapter args here in Prisma 7
+export const prisma = globalForPrisma.prisma || new PrismaClient({
+    log: ['query', 'error', 'warn'],
+});
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 

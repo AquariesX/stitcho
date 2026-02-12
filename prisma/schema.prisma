@@ -1,15 +1,17 @@
 datasource db {
   provider = "mysql"
+  url      = env("DATABASE_URL")
 }
 
 generator client {
   provider = "prisma-client-js"
+  engineType = "library"
 }
 
 enum Role {
   ADMIN
   TAILOR
-  CUSTOMER
+  CUSTOMER // Keeping it here just in case, but Customers now have their own table
 }
 
 enum OrderStatus {
@@ -48,9 +50,27 @@ model User {
   updatedAt    DateTime       @updatedAt
 
   measurements Measurement[]
-  orders       Order[]
+  // orders removed from User, now in Customer
 
   @@map("users")
+}
+
+model Customer {
+  id           Int            @id @default(autoincrement())
+  firebaseUid  String         @unique @db.VarChar(128)
+  name         String         @db.VarChar(100)
+  email        String?        @db.VarChar(120)
+  phoneNumber  String?        @db.VarChar(20)
+  photoUrl     String?        @db.VarChar(500)
+  isActive     Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  orders       Order[]
+  // Measurements could be linked here too if needed, but for now Standard measurements are by Users(Admins)
+  // If customers have custom measurements, we might need a relation or just rely on Order specific measurements
+  
+  @@map("customers")
 }
 
 model Category {
@@ -178,7 +198,7 @@ model Order {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  customer        User          @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  customer        Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
   product         Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
   fabric          Fabric        @relation(fields: [fabricId], references: [id], onDelete: Restrict)
   color           Color         @relation(fields: [colorId], references: [id], onDelete: Restrict)
