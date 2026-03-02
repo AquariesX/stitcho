@@ -1,16 +1,16 @@
 "use client";
 
 import React, { useState } from "react";
-import { Bell, LogOut, Search, Menu, User as UserIcon } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { LogOut, Search } from "lucide-react";
+import { motion } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
+import NotificationDropdown from "@/components/NotificationDropdown";
 
 export default function Header() {
     const { logout, user, role } = useAuth();
     const router = useRouter();
     const [isSearchFocused, setIsSearchFocused] = useState(false);
-    const [showNotifications, setShowNotifications] = useState(false);
 
     const handleLogout = () => {
         logout();
@@ -26,9 +26,6 @@ export default function Header() {
             >
                 {/* Left Section: Welcome / Title */}
                 <div className="flex items-center gap-4">
-                    {/* Mobile menu trigger could go here if we moved it from Sidebar, 
-                         but Sidebar handles its own mobile trigger for now. 
-                         We can add a welcome message instead. */}
                     <div>
                         <h2 className="text-xl font-bold text-gray-800">
                             Dashboard
@@ -58,54 +55,8 @@ export default function Header() {
 
                 {/* Right Section: Actions */}
                 <div className="flex items-center gap-3">
-                    {/* Notification Bell */}
-                    <div className="relative">
-                        <motion.button
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={() => setShowNotifications(!showNotifications)}
-                            className="p-2.5 bg-gray-50 text-gray-600 rounded-xl hover:bg-[#223943] hover:text-white transition-colors relative"
-                        >
-                            <Bell size={20} />
-                            <span className="absolute top-2 right-2.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
-                        </motion.button>
-
-                        <AnimatePresence>
-                            {showNotifications && (
-                                <motion.div
-                                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                    className="absolute right-0 top-full mt-3 w-80 bg-white rounded-2xl shadow-xl border border-gray-100 p-4 z-50 origin-top-right"
-                                >
-                                    <h3 className="font-semibold text-gray-800 mb-3">Notifications</h3>
-                                    <div className="space-y-3">
-                                        <div className="flex items-start gap-3 p-2 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer">
-                                            <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-500 mt-1">
-                                                <Bell size={14} />
-                                            </div>
-                                            <div>
-                                                <p className="text-sm font-medium text-gray-800">New Order Received</p>
-                                                <p className="text-xs text-gray-500">2 minutes ago</p>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-start gap-3 p-2 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer">
-                                            <div className="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center text-green-500 mt-1">
-                                                <UserIcon size={14} />
-                                            </div>
-                                            <div>
-                                                <p className="text-sm font-medium text-gray-800">New Customer: Ali Khan</p>
-                                                <p className="text-xs text-gray-500">1 hour ago</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="mt-3 pt-3 border-t border-gray-100 text-center">
-                                        <button className="text-xs font-semibold text-[#223943] hover:underline">Mark all as read</button>
-                                    </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-                    </div>
+                    {/* Notification Dropdown */}
+                    <NotificationDropdown />
 
                     {/* Logout Button */}
                     <motion.button

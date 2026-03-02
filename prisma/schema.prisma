@@ -5,7 +5,6 @@ datasource db {
 
 generator client {
   provider = "prisma-client-js"
-  engineType = "library"
 }
 
 enum Role {
@@ -37,52 +36,93 @@ enum PaymentStatus {
   PAID
   FAILED
 }
-  
+
 model User {
-  id           Int            @id @default(autoincrement())
-  firebaseUid  String         @unique @db.VarChar(128)
-  name         String         @db.VarChar(100)
-  email        String?        @db.VarChar(120)
-  phoneNumber  String?        @db.VarChar(20)
-  role         Role
-  isActive     Boolean        @default(true)
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  id          Int      @id @default(autoincrement())
+  firebaseUid String   @unique @db.VarChar(128)
+  name        String   @db.VarChar(100)
+  email       String?  @db.VarChar(120)
+  phoneNumber String?  @db.VarChar(20)
+  role        Role
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   measurements Measurement[]
+  shopProfile  ShopProfile?
+  categories   Category[]
+  products     Product[]
+  fabrics      Fabric[]
+  colors       Color[]
+  styles       Style[]
   // orders removed from User, now in Customer
 
   @@map("users")
 }
 
-model Customer {
-  id           Int            @id @default(autoincrement())
-  firebaseUid  String         @unique @db.VarChar(128)
-  name         String         @db.VarChar(100)
-  email        String?        @db.VarChar(120)
-  phoneNumber  String?        @db.VarChar(20)
-  photoUrl     String?        @db.VarChar(500)
-  isActive     Boolean        @default(true)
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+model ShopProfile {
+  id                Int      @id @default(autoincrement())
+  userId            Int      @unique
+  shopName          String   @db.VarChar(100)
+  shopAddress       String   @db.Text
+  city              String?  @db.VarChar(100)
+  state             String?  @db.VarChar(100)
+  postalCode        String?  @db.VarChar(20)
+  country           String?  @default("Pakistan") @db.VarChar(100)
+  landmark          String?  @db.VarChar(255)
+  workingHours      String   @db.VarChar(100)
+  specialization    String   @db.VarChar(100)
+  yearsOfExperience Int
+  shopLogoUrl       String?  @db.VarChar(500)
+  description       String?  @db.Text
+  priceRange        String?  @db.VarChar(50)
+  currency          String   @default("PKR") @db.VarChar(10)
+  phoneNumber       String?  @db.VarChar(20)
+  whatsappNumber    String?  @db.VarChar(20)
+  shopEmail         String?  @db.VarChar(120)
+  website           String?  @db.VarChar(255)
+  facebookUrl       String?  @db.VarChar(255)
+  instagramUrl      String?  @db.VarChar(255)
+  deliveryAvailable Boolean  @default(false)
+  deliveryRadius    String?  @db.VarChar(50)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  orders       Order[]
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("shop_profiles")
+}
+
+model Customer {
+  id          Int      @id @default(autoincrement())
+  firebaseUid String   @unique @db.VarChar(128)
+  name        String   @db.VarChar(100)
+  email       String?  @db.VarChar(120)
+  phoneNumber String?  @db.VarChar(20)
+  photoUrl    String?  @db.VarChar(500)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orders Order[]
   // Measurements could be linked here too if needed, but for now Standard measurements are by Users(Admins)
   // If customers have custom measurements, we might need a relation or just rely on Order specific measurements
-  
+
   @@map("customers")
 }
 
 model Category {
-  id        Int       @id @default(autoincrement())
-  name      String    @db.VarChar(80)
-  code      String    @unique @db.VarChar(20)
-  imageUrl  String    @db.VarChar(500)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(80)
+  code      String   @unique @db.VarChar(20)
+  imageUrl  String   @db.VarChar(500)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  userId    Int?
 
-  products  Product[]
-  fabrics   Fabric[]
+  user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  products Product[]
+  fabrics  Fabric[]
 
   @@map("categories")
 }
@@ -96,10 +136,12 @@ model Product {
   basePrice  Decimal  @db.Decimal(10, 2)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  userId     Int?
 
-  category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  fabrics    Fabric[]
-  orders     Order[]
+  user     User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  fabrics  Fabric[]
+  orders   Order[]
 
   @@index([categoryId])
   @@map("products")
@@ -108,19 +150,19 @@ model Product {
 model Fabric {
   id         Int      @id @default(autoincrement())
   categoryId Int
-  productId  Int
   name       String   @db.VarChar(100)
   imageUrl   String   @db.VarChar(500)
   price      Decimal  @db.Decimal(8, 2) // usually fabrics are cheaper than full product
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  userId     Int?
 
-  category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  product    Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
-  orders     Order[]
+  user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  category Category  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  products Product[]
+  orders   Order[]
 
   @@index([categoryId])
-  @@index([productId])
   @@map("fabrics")
 }
 
@@ -130,35 +172,39 @@ model Color {
   hexCode   String   @db.Char(7) // #RRGGBB format
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  userId    Int?
 
-  orders    Order[]
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  orders Order[]
 
   @@map("colors")
 }
 
 model Style {
-  id        Int           @id @default(autoincrement())
-  name      String        @db.VarChar(80)
-  imageUrl  String        @db.VarChar(500)
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(80)
+  imageUrl  String   @db.VarChar(500)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  userId    Int?
 
-  options   StyleOption[]
+  user    User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  options StyleOption[]
 
   @@map("styles")
 }
 
 model StyleOption {
-  id              Int          @id @default(autoincrement())
+  id              Int      @id @default(autoincrement())
   styleId         Int
-  name            String       @db.VarChar(100)
-  imageUrl        String       @db.VarChar(500)
-  additionalPrice Decimal      @db.Decimal(8, 2) @default(0.00)
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  name            String   @db.VarChar(100)
+  imageUrl        String   @db.VarChar(500)
+  additionalPrice Decimal  @default(0.00) @db.Decimal(8, 2)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  style           Style        @relation(fields: [styleId], references: [id], onDelete: Cascade)
-  orderStyles     OrderStyle[]
+  style       Style        @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  orderStyles OrderStyle[]
 
   @@index([styleId])
   @@map("style_options")
@@ -179,33 +225,33 @@ model Measurement {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
-  createdBy       User             @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
-  orders          Order[]
+  createdBy User    @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  orders    Order[]
 
   @@index([createdByUserId])
   @@map("measurements")
 }
 
 model Order {
-  id              Int           @id @default(autoincrement())
-  customerId      Int
-  productId       Int
-  fabricId        Int
-  colorId         Int
-  measurementId   Int
-  totalPrice      Decimal       @db.Decimal(12, 2)
-  status          OrderStatus   @default(PENDING)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  id            Int         @id @default(autoincrement())
+  customerId    Int
+  productId     Int
+  fabricId      Int
+  colorId       Int
+  measurementId Int
+  totalPrice    Decimal     @db.Decimal(12, 2)
+  status        OrderStatus @default(PENDING)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
-  customer        Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  product         Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
-  fabric          Fabric        @relation(fields: [fabricId], references: [id], onDelete: Restrict)
-  color           Color         @relation(fields: [colorId], references: [id], onDelete: Restrict)
-  measurement     Measurement   @relation(fields: [measurementId], references: [id], onDelete: Restrict)
+  customer    Customer    @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  product     Product     @relation(fields: [productId], references: [id], onDelete: Restrict)
+  fabric      Fabric      @relation(fields: [fabricId], references: [id], onDelete: Restrict)
+  color       Color       @relation(fields: [colorId], references: [id], onDelete: Restrict)
+  measurement Measurement @relation(fields: [measurementId], references: [id], onDelete: Restrict)
 
-  orderStyles     OrderStyle[]
-  payment         Payment?
+  orderStyles OrderStyle[]
+  payment     Payment?
 
   @@index([customerId])
   @@index([productId])
@@ -216,14 +262,14 @@ model Order {
 }
 
 model OrderStyle {
-  id            Int          @id @default(autoincrement())
+  id            Int      @id @default(autoincrement())
   orderId       Int
   styleOptionId Int
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  order         Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  styleOption   StyleOption  @relation(fields: [styleOptionId], references: [id], onDelete: Cascade)
+  order       Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  styleOption StyleOption @relation(fields: [styleOptionId], references: [id], onDelete: Cascade)
 
   @@unique([orderId, styleOptionId]) // prevent duplicate style options in same order
   @@index([orderId])
@@ -241,8 +287,32 @@ model Payment {
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
 
-  order                 Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
   @@map("payments")
+}
+
+enum NotificationType {
+  TAILOR_SIGNUP
+  CUSTOMER_SIGNUP
+  PROFILE_UPDATE
+  SHOP_UPDATE
+  ORDER_STATUS
+  INVENTORY_ALERT
+  SYSTEM
+}
+
+model Notification {
+  id        Int              @id @default(autoincrement())
+  type      NotificationType
+  title     String           @db.VarChar(200)
+  message   String           @db.Text
+  isRead    Boolean          @default(false)
+  metadata  Json? // Store extra data like userId, orderId, etc.
+  createdAt DateTime         @default(now())
+
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
 }

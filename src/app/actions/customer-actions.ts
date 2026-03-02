@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { adminAuth } from '@/lib/firebase-admin';
 import type admin from 'firebase-admin';
 import { Customer } from '@prisma/client';
+import { createNotification } from './notification-actions';
 
 // Safer type import
 type UserRecord = admin.auth.UserRecord;
@@ -46,6 +47,13 @@ export async function fetchAndSyncCustomers() {
 
         // 2. Sync with Prisma Database
         if (fetchedFromFirebase && firebaseUsers.length > 0) {
+            // Get existing customer UIDs to detect new signups
+            const existingCustomers = await prisma.customer.findMany({
+                select: { firebaseUid: true },
+            });
+            const existingUids = new Set(existingCustomers.map(c => c.firebaseUid));
+            const newCustomers: { name: string; email: string | null }[] = [];
+
             // Process in chunks to avoid exhausting DB connection pool
             const CHUNK_SIZE = 20;
             for (let i = 0; i < firebaseUsers.length; i += CHUNK_SIZE) {
@@ -60,6 +68,11 @@ export async function fetchAndSyncCustomers() {
                         name: fbUser.displayName || (fbUser.email ? fbUser.email.split('@')[0] : 'Unknown Customer'),
                         isActive: !fbUser.disabled,
                     };
+
+                    // Track new customer signups
+                    if (!existingUids.has(fbUser.uid)) {
+                        newCustomers.push({ name: customerData.name, email: customerData.email });
+                    }
 
                     // We use upsert to create new customers or update existing profile info
                     return prisma.customer.upsert({
@@ -77,7 +90,20 @@ export async function fetchAndSyncCustomers() {
                 // Wait for this chunk to complete before moving to next
                 await Promise.allSettled(upsertPromises);
             }
-            // Removed revalidatePath here as it causes issues when called during render
+
+            // Create notifications for new customer signups
+            for (const newCust of newCustomers) {
+                try {
+                    await createNotification(
+                        'CUSTOMER_SIGNUP',
+                        `New Customer: ${newCust.name}`,
+                        `A new customer has signed up: ${newCust.name}${newCust.email ? ` (${newCust.email})` : ''}.`,
+                        { name: newCust.name, email: newCust.email }
+                    );
+                } catch (notifError) {
+                    console.error('Failed to create customer notification:', notifError);
+                }
+            }
         }
 
         // 3. Fetch consolidated list from Prisma (Source of Truth)

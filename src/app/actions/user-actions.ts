@@ -18,6 +18,10 @@ export type UserWithStatus = {
 };
 
 // Add optional filtering
+export async function getTailors() {
+    return getUsers(Role.TAILOR);
+}
+
 export async function getUsers(filterRole?: Role) {
     try {
         const users = await prisma.user.findMany({
@@ -83,5 +87,23 @@ export async function getUsers(filterRole?: Role) {
     } catch (error) {
         console.error('Failed to fetch users:', error);
         return { success: false, error: 'Failed to fetch users' };
+    }
+}
+
+export async function verifyUserRole(firebaseUid: string) {
+    try {
+        const user = await prisma.user.findUnique({
+            where: { firebaseUid },
+            select: { id: true, role: true, email: true, name: true }
+        });
+
+        if (!user) {
+            return { success: false, error: 'User not found in database', role: null, email: null, name: null };
+        }
+
+        return { success: true, id: user.id, role: user.role, email: user.email, name: user.name, error: null };
+    } catch (error) {
+        console.error('Error verifying user role:', error);
+        return { success: false, error: 'Internal server error', role: null, email: null, name: null };
     }
 }

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { Role } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import { adminAuth } from '@/lib/firebase-admin';
+import { createNotification } from './notification-actions';
 
 export async function getAdmins() {
     try {
@@ -19,6 +20,19 @@ export async function getAdmins() {
     } catch (error) {
         console.error('Failed to fetch admins:', error);
         return { success: false, error: 'Failed to fetch admins' };
+    }
+}
+
+export async function getAdminById(id: number) {
+    try {
+        const admin = await prisma.user.findUnique({
+            where: { id },
+        });
+        if (!admin) return { success: false, error: 'Admin not found' };
+        return { success: true, data: admin };
+    } catch (error) {
+        console.error('Failed to fetch admin:', error);
+        return { success: false, error: 'Failed to fetch admin' };
     }
 }
 
@@ -50,6 +64,7 @@ export async function createAdmin(formData: FormData) {
                 password,
                 displayName: name,
                 phoneNumber: formattedPhone,
+                emailVerified: true, // Auto-verify email as per request
             });
             firebaseUid = firebaseUser.uid;
         } catch (firebaseError: any) {
@@ -71,6 +86,33 @@ export async function createAdmin(formData: FormData) {
                     isActive: true,
                 },
             });
+
+            // Send notification email asynchronously (don't block response)
+            // We import dynamically or just use the imported function if at top level
+            // Ideally import at top, but let's assume sending runs without awaiting critical failure
+            // Note: In Server Actions, background tasks without await might be terminated if runtime is serverless
+            // But usually okay in standard Node env. For Vercel, need waitUntil. 
+            // We will await it for now to ensure delivery feedback or catch errors, 
+            // or just trigger it. Let's await to be safe.
+            try {
+                const { sendAccountCreatedEmail } = await import('@/lib/email-service');
+                await sendAccountCreatedEmail(email, name, 'ADMIN', password);
+            } catch (emailError) {
+                console.error('Failed to send welcome email:', emailError);
+                // Don't fail the creation just because email failed, but maybe log it
+            }
+
+            // Create notification for new admin
+            try {
+                await createNotification(
+                    'SYSTEM',
+                    `New Admin: ${name}`,
+                    `A new admin account has been created for ${name} (${email}).`,
+                    { userId: newAdmin.id, email, name }
+                );
+            } catch (notifError) {
+                console.error('Failed to create notification:', notifError);
+            }
 
             revalidatePath('/dashboard/users/admins');
             return { success: true, data: newAdmin };
@@ -128,6 +170,18 @@ export async function updateAdmin(id: number, formData: FormData) {
                 phoneNumber,
             },
         });
+
+        // Create notification for admin profile update
+        try {
+            await createNotification(
+                'PROFILE_UPDATE',
+                `Admin Updated: ${name}`,
+                `Admin profile for ${name} has been updated.`,
+                { userId: id, name }
+            );
+        } catch (notifError) {
+            console.error('Failed to create notification:', notifError);
+        }
 
         revalidatePath('/dashboard/users/admins');
         return { success: true, data: updatedAdmin };

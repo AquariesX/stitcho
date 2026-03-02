@@ -7,6 +7,9 @@ import clsx from "clsx";
 
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from "@/lib/firebase";
+import { verifyUserRole } from "../actions/user-actions";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -22,24 +25,84 @@ export default function LoginPage() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
-        // Simulate login delay
-        await new Promise((resolve) => setTimeout(resolve, 1500));
 
         // Dev Credential Check
         if (email === 'admin@gmail.com' && password === 'dev786') {
-            login(email, "admin");
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            login({ id: 999, name: "Admin Dev", email }, "admin");
             router.push('/dashboard');
             return;
         }
 
         if (email === 'tailor@gmail.com' && password === 'dev786') {
-            login(email, "tailor");
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            login({ id: 888, name: "Tailor Dev", email }, "tailor");
             router.push('/dashboard');
             return;
         }
 
-        setLoading(false);
-        alert(`Logging in as ${role}... (Implementation pending)`);
+        try {
+            // Firebase Login
+            const userCredential = await signInWithEmailAndPassword(auth, email, password);
+            const firebaseUid = userCredential.user.uid;
+
+            // Verify Role on Server
+            const result = await verifyUserRole(firebaseUid);
+
+            if (!result.success || !result.role) {
+                alert(result.error || "User verification failed");
+                setLoading(false);
+                return;
+            }
+
+            // Map Prisma Role to Context Role
+            const dbRole = result.role; // ADMIN | TAILOR | CUSTOMER
+            let contextRole: "admin" | "tailor" | "customer";
+
+            if (dbRole === "ADMIN") contextRole = "admin";
+            else if (dbRole === "TAILOR") contextRole = "tailor";
+            else if (dbRole === "CUSTOMER") contextRole = "customer";
+            else {
+                alert("Invalid role assignment");
+                setLoading(false);
+                return;
+            }
+
+            // Check if role matches selected tab
+            if (role === 'admin' && contextRole !== 'admin') {
+                alert("Access Denied: You are not an admin.");
+                setLoading(false);
+                return;
+            }
+            if (role === 'tailor' && contextRole !== 'tailor' && contextRole !== 'admin') {
+                // Allow admin to login as tailor? Maybe not.
+                alert("Access Denied: You are not a tailor.");
+                setLoading(false);
+                return;
+            }
+
+            login({
+                id: result.id!,
+                firebaseUid,
+                name: result.name || "User",
+                email: result.email || email
+            }, contextRole);
+            router.push('/dashboard');
+
+        } catch (error: any) {
+            console.error("Login Error:", error);
+            let message = "Login failed. Please check your credentials.";
+            if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+                message = "Invalid email or password.";
+            } else if (error.code === 'auth/invalid-credential') {
+                message = "Invalid credentials.";
+            } else if (error.code === 'auth/network-request-failed') {
+                message = "Network error. Please check your connection.";
+            }
+            alert(message);
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
