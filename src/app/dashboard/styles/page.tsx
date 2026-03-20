@@ -8,7 +8,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import {
     Plus, Trash2, Image as ImageIcon, Search, X, Edit3, UploadCloud,
-    Loader2, AlertTriangle, Wand2, ChevronDown, DollarSign, Layers
+    Loader2, AlertTriangle, Wand2, ChevronDown, Layers
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -558,7 +558,7 @@ export default function StylesPage() {
                                     <div className="space-y-2">
                                         <label className="text-sm font-semibold text-black">Additional Price (PKR)</label>
                                         <div className="relative">
-                                            <DollarSign className="absolute top-1/2 left-3 -translate-y-1/2 text-gray-400" size={16} />
+                                            <span className="absolute top-1/2 left-3 -translate-y-1/2 text-gray-400 text-sm font-medium">PKR</span>
                                             <input
                                                 type="number"
                                                 step="0.01"
@@ -566,7 +566,7 @@ export default function StylesPage() {
                                                 value={formAdditionalPrice}
                                                 onChange={(e) => setFormAdditionalPrice(e.target.value)}
                                                 placeholder="0"
-                                                className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-4 py-3 text-sm text-black placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#223943] focus:bg-white transition-all"
+                                                className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-12 pr-4 py-3 text-sm text-black placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#223943] focus:bg-white transition-all"
                                             />
                                         </div>
                                         <p className="text-xs text-gray-500">Extra charge for this option (0 = no extra cost)</p>

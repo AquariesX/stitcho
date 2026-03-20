@@ -2,6 +2,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
+import { notifyAdminOnTailorItemAdd } from './notification-actions';
 
 function serialize<T>(data: T): T {
     return JSON.parse(JSON.stringify(data, (_key, value) =>
@@ -29,6 +30,10 @@ export async function createFabric(formData: FormData) {
             data: { name, imageUrl, price, categoryId, userId },
             include: { category: true },
         });
+
+        if (userId) {
+            await notifyAdminOnTailorItemAdd(userId, 'Fabric', name);
+        }
 
         revalidatePath('/dashboard/fabrics');
         return { success: true, data: serialize(newFabric) };

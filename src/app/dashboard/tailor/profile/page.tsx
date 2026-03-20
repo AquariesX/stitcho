@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { getShopProfile, upsertShopProfile } from "@/app/actions/shop-profile-actions";
 import { motion } from "framer-motion";
-import { Save, Store, MapPin, Clock, Tag, Award, Image as ImageIcon, DollarSign, Loader2, UploadCloud } from "lucide-react";
+import { Save, Store, MapPin, Clock, Tag, Award, Image as ImageIcon, Loader2, UploadCloud } from "lucide-react";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "@/lib/firebase";
 import clsx from "clsx";
@@ -362,14 +362,14 @@ export default function ShopProfilePage() {
                                         <option value="SAR">SAR</option>
                                     </select>
                                     <div className="relative flex-1">
-                                        <DollarSign className="absolute top-3.5 left-4 text-gray-400" size={18} />
+                                        <span className="absolute top-3.5 left-4 text-gray-400 text-sm font-medium">PKR</span>
                                         <input
                                             type="text"
                                             name="priceRange"
                                             value={profile.priceRange || ""}
                                             onChange={handleInputChange}
-                                            className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#223943] focus:border-transparent outline-none transition-all placeholder:text-gray-400"
-                                            placeholder="e.g. $$, Low, Premium"
+                                            className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#223943] focus:border-transparent outline-none transition-all placeholder:text-gray-400"
+                                            placeholder="e.g. 5000 - 15000"
                                         />
                                     </div>
                                 </div>

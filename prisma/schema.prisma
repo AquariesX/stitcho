@@ -55,6 +55,7 @@ model User {
   fabrics      Fabric[]
   colors       Color[]
   styles       Style[]
+  designs      Design[]
   // orders removed from User, now in Customer
 
   @@map("users")
@@ -123,8 +124,26 @@ model Category {
   user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   products Product[]
   fabrics  Fabric[]
+  designs  Design[]
 
   @@map("categories")
+}
+
+model Design {
+  id          Int       @id @default(autoincrement())
+  name        String
+  description String?
+  imageUrl    String
+  basePrice   Float
+  categoryId  Int
+  userId      Int?
+  createdAt   DateTime  @default(now())
+
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  category    Category  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@index([categoryId])
+  @@map("designs")
 }
 
 model Product {

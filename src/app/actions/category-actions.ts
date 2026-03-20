@@ -2,6 +2,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
+import { notifyAdminOnTailorItemAdd } from './notification-actions';
 
 export async function createCategory(formData: FormData) {
     try {
@@ -24,6 +25,10 @@ export async function createCategory(formData: FormData) {
                 userId
             }
         });
+
+        if (userId) {
+            await notifyAdminOnTailorItemAdd(userId, 'Category', name);
+        }
 
         revalidatePath('/dashboard/categories');
         return { success: true, data: newCategory };

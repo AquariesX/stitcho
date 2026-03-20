@@ -9,7 +9,6 @@ import {
     Clock,
     Scissors,
     Award,
-    DollarSign,
     Phone,
     Mail,
     Globe,
@@ -218,7 +217,7 @@ export default function TailorShopsClient({ initialTailors }: TailorShopsClientP
                                             </span>
                                             {shop.priceRange && (
                                                 <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-100">
-                                                    <DollarSign size={12} /> {shop.priceRange}
+                                                    <span className="text-[10px] font-bold">PKR</span> {shop.priceRange}
                                                 </span>
                                             )}
                                         </div>
@@ -388,7 +387,7 @@ export default function TailorShopsClient({ initialTailors }: TailorShopsClientP
                                         <ShopDetailRow icon={<Award size={16} />} label="Experience" value={`${selectedShop.shopProfile.yearsOfExperience} years`} />
                                         <ShopDetailRow icon={<Clock size={16} />} label="Working Hours" value={selectedShop.shopProfile.workingHours} />
                                         {selectedShop.shopProfile.priceRange && (
-                                            <ShopDetailRow icon={<DollarSign size={16} />} label="Price Range" value={`${selectedShop.shopProfile.priceRange} (${selectedShop.shopProfile.currency})`} />
+                                            <ShopDetailRow icon={<span className="text-xs font-bold font-sans">PKR</span>} label="Price Range" value={`${selectedShop.shopProfile.priceRange} (${selectedShop.shopProfile.currency})`} />
                                         )}
                                         {selectedShop.shopProfile.description && (
                                             <div className="pt-2">

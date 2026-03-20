@@ -40,6 +40,35 @@ export async function createNotification(
 }
 
 /**
+ * Helper to notify admins when a tailor adds a new inventory item.
+ */
+export async function notifyAdminOnTailorItemAdd(
+    userId: number,
+    itemType: 'Category' | 'Product' | 'Fabric' | 'Color' | 'Style' | 'Design',
+    itemName: string
+) {
+    try {
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            include: { shopProfile: true }
+        });
+
+        if (!user || user.role !== 'TAILOR') return;
+
+        const shopName = user.shopProfile?.shopName || user.name;
+
+        await createNotification(
+            'INVENTORY_ALERT',
+            `New ${itemType} Added`,
+            `Tailor "${shopName}" has added a new ${itemType.toLowerCase()}: ${itemName}`,
+            { userId, itemType, itemName }
+        );
+    } catch (error) {
+        console.error('Failed to notify admin on tailor item add:', error);
+    }
+}
+
+/**
  * Fetch notifications with pagination. Returns newest first.
  */
 export async function getNotifications(limit: number = 30, offset: number = 0) {

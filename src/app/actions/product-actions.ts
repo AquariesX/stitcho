@@ -2,6 +2,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
+import { notifyAdminOnTailorItemAdd } from './notification-actions';
 
 // Convert Prisma Decimal objects to plain serializable values
 function serialize<T>(data: T): T {
@@ -31,6 +32,10 @@ export async function createProduct(formData: FormData) {
             data: { name, code, imageUrl, basePrice, categoryId, userId },
             include: { category: true },
         });
+
+        if (userId) {
+            await notifyAdminOnTailorItemAdd(userId, 'Product', name);
+        }
 
         revalidatePath('/dashboard/products');
         return { success: true, data: serialize(newProduct) };
