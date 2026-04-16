@@ -6,7 +6,7 @@ import Header from "@/components/Header";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
     return (
-        <div className="flex min-h-screen bg-[#F3F4F6]">
+        <div className="flex min-h-screen bg-[#F3F4F6] dark:bg-[#0c1418] text-slate-900 dark:text-gray-100 transition-colors duration-300">
             {/* 
         This is our Sidebar Component.
         It handles its own state (mobile open/close) and responsiveness.

@@ -242,7 +242,7 @@ export default function Sidebar() {
             </div>
 
             {/* Desktop Sidebar (Static) */}
-            <aside className="hidden md:flex flex-col w-72 bg-[#223943] text-white shadow-2xl h-screen sticky top-0 overflow-y-auto custom-scrollbar">
+            <aside className="hidden md:flex flex-col w-72 bg-[#223943] dark:bg-[#0c1418] border-r dark:border-white/5 text-white shadow-2xl h-screen sticky top-0 overflow-y-auto custom-scrollbar transition-colors duration-300">
                 <SidebarContent />
             </aside>
 
@@ -262,7 +262,7 @@ export default function Sidebar() {
                             animate={{ x: 0 }}
                             exit={{ x: "-100%" }}
                             transition={{ type: "spring", bounce: 0, duration: 0.4 }}
-                            className="fixed inset-y-0 left-0 z-50 w-72 bg-[#223943] text-white shadow-2xl overflow-y-auto custom-scrollbar md:hidden flex flex-col"
+                            className="fixed inset-y-0 left-0 z-50 w-72 bg-[#223943] dark:bg-[#0c1418] text-white shadow-2xl overflow-y-auto custom-scrollbar md:hidden flex flex-col border-r dark:border-white/5"
                         >
                             <SidebarContent />
                         </motion.aside>
@@ -295,8 +295,8 @@ function MenuItemComponent({ item, pathname }: { item: MenuItem; pathname: strin
                     className={clsx(
                         "flex items-center p-3 rounded-xl transition-all duration-300",
                         isActive
-                            ? "bg-[#2c4a57] text-white shadow-md border-l-4 border-white"
-                            : "text-white/70 hover:bg-white/10 hover:text-white"
+                            ? "bg-[#2c4a57] dark:bg-[#C8A96A]/20 text-white dark:text-[#C8A96A] shadow-md border-l-4 border-white dark:border-[#C8A96A]"
+                            : "text-white/70 hover:bg-white/10 hover:text-white dark:hover:text-[#C8A96A]"
                     )}
                 >
                     <span className="mr-3">{item.icon}</span>
@@ -308,8 +308,8 @@ function MenuItemComponent({ item, pathname }: { item: MenuItem; pathname: strin
                     className={clsx(
                         "w-full flex items-center justify-between p-3 rounded-xl transition-all duration-300",
                         isActive
-                            ? "bg-[#2c4a57] text-white shadow-md"
-                            : "text-white/70 hover:bg-white/10 hover:text-white"
+                            ? "bg-[#2c4a57] dark:bg-[#C8A96A]/20 text-white dark:text-[#C8A96A] shadow-md"
+                            : "text-white/70 hover:bg-white/10 hover:text-white dark:hover:text-[#C8A96A]"
                     )}
                 >
                     <div className="flex items-center">
@@ -346,7 +346,7 @@ function MenuItemComponent({ item, pathname }: { item: MenuItem; pathname: strin
                                         href={sub.href}
                                         className={clsx(
                                             "flex items-center py-2 px-3 rounded-lg text-sm transition-colors",
-                                            isSubActive ? "text-white bg-white/10 font-semibold" : "text-white/60 hover:text-white"
+                                            isSubActive ? "text-white dark:text-[#C8A96A] bg-white/10 dark:bg-[#C8A96A]/10 font-semibold" : "text-white/60 hover:text-white dark:hover:text-[#C8A96A]"
                                         )}
                                     >
                                         {/* Tiny dot for active state visual aid */}
