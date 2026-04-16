@@ -21,8 +21,9 @@ function isConnectionError(error: any) {
         error?.code === 'P1001' ||
         error?.code === 'P1002' ||
         error?.code === 'P1011' ||
+        error?.code === 'P1024' ||
         error?.name === 'PrismaClientInitializationError' ||
-        (error?.message && error.message.includes("database server"))
+        (error?.message && (error.message.includes("database server") || error.message.includes("timed out")))
     );
 }
 
