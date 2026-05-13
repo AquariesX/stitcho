@@ -39,7 +39,7 @@ function AnimatedNumber({ value }: { value: number }) {
 }
 
 // ─── stripe status config ─────────────────────────────────────────────────────
-const STATUS_CONFIG = {
+const STATUS_CONFIG: Record<PaymentStatus, { label: string, stripeEvent: string, icon: any, badge: string, row: string, dot: string, glow: string }> = {
   [PaymentStatus.PAID]: {
     label: "Succeeded",
     stripeEvent: "payment_intent.succeeded",
@@ -66,6 +66,42 @@ const STATUS_CONFIG = {
     row: "border-l-2 border-l-red-400",
     dot: "bg-red-400",
     glow: "shadow-red-500/20",
+  },
+  [PaymentStatus.PENDING]: {
+    label: "Pending",
+    stripeEvent: "payment_intent.processing",
+    icon: Clock,
+    badge: "bg-blue-100 text-blue-800 dark:bg-blue-500/20 dark:text-blue-300",
+    row: "border-l-2 border-l-blue-400",
+    dot: "bg-blue-400",
+    glow: "shadow-blue-500/20",
+  },
+  [PaymentStatus.REFUNDED]: {
+    label: "Refunded",
+    stripeEvent: "charge.refunded",
+    icon: RefreshCw,
+    badge: "bg-purple-100 text-purple-800 dark:bg-purple-500/20 dark:text-purple-300",
+    row: "border-l-2 border-l-purple-400",
+    dot: "bg-purple-400",
+    glow: "shadow-purple-500/20",
+  },
+  [PaymentStatus.COD_PENDING]: {
+    label: "COD Pending",
+    stripeEvent: "none",
+    icon: Clock,
+    badge: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300",
+    row: "border-l-2 border-l-amber-400",
+    dot: "bg-amber-400",
+    glow: "shadow-amber-500/20",
+  },
+  [PaymentStatus.COD_COLLECTED]: {
+    label: "COD Collected",
+    stripeEvent: "none",
+    icon: CheckCircle2,
+    badge: "bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300",
+    row: "border-l-2 border-l-green-400",
+    dot: "bg-green-400",
+    glow: "shadow-green-500/20",
   },
 };
 
@@ -389,17 +425,25 @@ export default function StripePaymentLogsPage() {
             {/* filter pills */}
             <div className="flex gap-1.5 flex-wrap">
               {(["ALL", PaymentStatus.PAID, PaymentStatus.REQUIRES_PAYMENT, PaymentStatus.FAILED] as LogFilter[]).map((f) => {
-                const labels: Record<LogFilter, string> = {
+                const labels: Record<string, string> = {
                   ALL: "All Events",
                   PAID: "Succeeded",
                   REQUIRES_PAYMENT: "Requires Payment",
                   FAILED: "Failed",
+                  PENDING: "Pending",
+                  REFUNDED: "Refunded",
+                  COD_PENDING: "COD Pending",
+                  COD_COLLECTED: "COD Collected",
                 };
-                const colors: Record<LogFilter, string> = {
+                const colors: Record<string, string> = {
                   ALL: "bg-gray-900 dark:bg-white text-white dark:text-gray-900",
                   PAID: "bg-green-500 text-white",
                   REQUIRES_PAYMENT: "bg-amber-500 text-white",
                   FAILED: "bg-red-500 text-white",
+                  PENDING: "bg-blue-500 text-white",
+                  REFUNDED: "bg-purple-500 text-white",
+                  COD_PENDING: "bg-amber-500 text-white",
+                  COD_COLLECTED: "bg-green-500 text-white",
                 };
                 return (
                   <button

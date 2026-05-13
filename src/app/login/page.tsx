@@ -29,14 +29,16 @@ export default function LoginPage() {
         // Dev Credential Check
         if (email === 'admin@gmail.com' && password === 'dev786') {
             await new Promise((resolve) => setTimeout(resolve, 1500));
-            login({ id: 999, name: "Admin Dev", email }, "admin");
+            login({ id: 999, firebaseUid: 'dev-admin', name: "Admin Dev", email }, "admin");
+            document.cookie = `userRole=admin; path=/; max-age=86400`;
             router.push('/dashboard');
             return;
         }
 
         if (email === 'tailor@gmail.com' && password === 'dev786') {
             await new Promise((resolve) => setTimeout(resolve, 1500));
-            login({ id: 888, name: "Tailor Dev", email }, "tailor");
+            login({ id: 888, firebaseUid: 'dev-tailor', name: "Tailor Dev", email }, "tailor");
+            document.cookie = `userRole=tailor; path=/; max-age=86400`;
             router.push('/dashboard');
             return;
         }
@@ -87,6 +89,8 @@ export default function LoginPage() {
                 name: result.name || "User",
                 email: result.email || email
             }, contextRole);
+            // Set cookie for middleware-level route protection
+            document.cookie = `userRole=${contextRole}; path=/; max-age=86400`;
             router.push('/dashboard');
 
         } catch (error: any) {

@@ -65,7 +65,7 @@ export default function TailorOrdersPage() {
         const previousOrders = [...orders];
         setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
         
-        const res = await updateOrderStatus(orderId, newStatus);
+        const res = await updateOrderStatus(orderId, newStatus, user!.id);
         if (!res.success) {
             setOrders(previousOrders); // Revert on failure
             alert("Failed to update status");

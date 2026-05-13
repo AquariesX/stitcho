@@ -32,9 +32,11 @@ export default function Header() {
         setTheme(newTheme);
     };
 
-    const handleLogout = () => {
-        logout();
-        router.push("/login"); // Redirect to login page
+    const handleLogout = async () => {
+        // Clear the middleware cookie first so /dashboard redirects to /login
+        document.cookie = "userRole=; path=/; max-age=0";
+        await logout(); // AuthContext.logout() calls Firebase signOut + clears localStorage
+        // Navigation is handled inside logout()
     };
 
     return (

@@ -99,6 +99,10 @@ function StatusBadge({ status }: { status: PaymentStatus }) {
     PAID: { label: "Paid", cls: "bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300" },
     REQUIRES_PAYMENT: { label: "Pending", cls: "bg-yellow-100 text-yellow-800 dark:bg-yellow-500/20 dark:text-yellow-300" },
     FAILED: { label: "Failed", cls: "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300" },
+    PENDING: { label: "Pending", cls: "bg-blue-100 text-blue-800 dark:bg-blue-500/20 dark:text-blue-300" },
+    REFUNDED: { label: "Refunded", cls: "bg-purple-100 text-purple-800 dark:bg-purple-500/20 dark:text-purple-300" },
+    COD_PENDING: { label: "COD Pending", cls: "bg-yellow-100 text-yellow-800 dark:bg-yellow-500/20 dark:text-yellow-300" },
+    COD_COLLECTED: { label: "COD Collected", cls: "bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300" },
   };
   const { label, cls } = map[status];
   return (
