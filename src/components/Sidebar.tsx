@@ -18,11 +18,7 @@ import {
   Shield,
   Star,
   Ruler,
-  Package,
-  Palette,
   Store,
-  Tag,
-  FileText,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -36,6 +32,11 @@ type MenuItem = {
   submenu?: { title: string; href: string }[];
   allowedRoles?: string[];
 };
+
+type SidebarUser = {
+  name?: string;
+  email?: string;
+} | null;
 
 /** All menu items keyed by role — Admin then Tailor */
 const allMenuItems: MenuItem[] = [
@@ -143,18 +144,16 @@ const allMenuItems: MenuItem[] = [
     allowedRoles: ["tailor"],
   },
   {
-    title: "My Catalog",
+    title: "Categories & Catalog",
     icon: <Shirt size={20} />,
     submenu: [
-      { title: "My Designs", href: "/dashboard/tailor/designs" },
-      { title: "Upload Design", href: "/dashboard/tailor/designs/new" },
+      { title: "Categories", href: "/dashboard/categories" },
+      { title: "Products", href: "/dashboard/products" },
+      { title: "Designs", href: "/dashboard/designs" },
+      { title: "Fabrics", href: "/dashboard/fabrics" },
+      { title: "Colors", href: "/dashboard/colors" },
+      { title: "Styles", href: "/dashboard/styles" },
     ],
-    allowedRoles: ["tailor"],
-  },
-  {
-    title: "Fabrics Inventory",
-    icon: <Package size={20} />,
-    href: "/dashboard/fabrics",
     allowedRoles: ["tailor"],
   },
   {
@@ -222,45 +221,6 @@ export default function Sidebar() {
     return item.allowedRoles.includes(role);
   });
 
-  const SidebarContent = () => (
-    <>
-      {/* Brand */}
-      <div className="p-6 border-b border-white/10 flex items-center gap-3">
-        <div className="w-10 h-10 bg-[#C8A96A]/20 rounded-full flex items-center justify-center">
-          <Scissors size={22} className="text-[#C8A96A]" />
-        </div>
-        <div>
-          <h1 className="text-xl font-bold tracking-wider text-white">Stitcho</h1>
-          <p className="text-xs text-white/40 capitalize">{role} Panel</p>
-        </div>
-      </div>
-
-      <nav className="p-4 space-y-1 flex-1 overflow-y-auto">
-        {menuItems.map((item, index) => (
-          <MenuItemComponent
-            key={`${role}-${index}`}
-            item={item}
-            pathname={pathname}
-            onNavigate={() => setIsMobileOpen(false)}
-          />
-        ))}
-      </nav>
-
-      {/* User profile snippet */}
-      <div className="p-4 border-t border-white/10">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-[#C8A96A]/20 flex items-center justify-center text-[#C8A96A] font-bold text-sm">
-            {user?.name?.[0]?.toUpperCase() ?? "U"}
-          </div>
-          <div className="overflow-hidden">
-            <p className="text-sm font-semibold text-white truncate">{user?.name ?? "User"}</p>
-            <p className="text-xs text-white/40 truncate max-w-[150px]">{user?.email}</p>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-
   return (
     <>
       {/* Mobile toggle */}
@@ -275,7 +235,13 @@ export default function Sidebar() {
 
       {/* Desktop sidebar */}
       <aside className="hidden md:flex flex-col w-72 bg-[#223943] dark:bg-[#0c1418] border-r border-white/5 text-white shadow-2xl h-screen sticky top-0 overflow-hidden transition-colors duration-300">
-        <SidebarContent />
+        <SidebarContent
+          menuItems={menuItems}
+          role={role}
+          user={user}
+          pathname={pathname}
+          onNavigate={() => setIsMobileOpen(false)}
+        />
       </aside>
 
       {/* Mobile drawer */}
@@ -296,11 +262,70 @@ export default function Sidebar() {
               transition={{ type: "spring", bounce: 0, duration: 0.4 }}
               className="fixed inset-y-0 left-0 z-50 w-72 bg-[#223943] dark:bg-[#0c1418] text-white shadow-2xl flex flex-col border-r border-white/5 md:hidden overflow-hidden"
             >
-              <SidebarContent />
+              <SidebarContent
+                menuItems={menuItems}
+                role={role}
+                user={user}
+                pathname={pathname}
+                onNavigate={() => setIsMobileOpen(false)}
+              />
             </motion.aside>
           </>
         )}
       </AnimatePresence>
+    </>
+  );
+}
+
+function SidebarContent({
+  menuItems,
+  role,
+  user,
+  pathname,
+  onNavigate,
+}: {
+  menuItems: MenuItem[];
+  role: string;
+  user: SidebarUser;
+  pathname: string;
+  onNavigate: () => void;
+}) {
+  return (
+    <>
+      {/* Brand */}
+      <div className="p-6 border-b border-white/10 flex items-center gap-3">
+        <div className="w-10 h-10 bg-[#C8A96A]/20 rounded-full flex items-center justify-center">
+          <Scissors size={22} className="text-[#C8A96A]" />
+        </div>
+        <div>
+          <h1 className="text-xl font-bold tracking-wider text-white">Stitcho</h1>
+          <p className="text-xs text-white/40 capitalize">{role} Panel</p>
+        </div>
+      </div>
+
+      <nav className="p-4 space-y-1 flex-1 overflow-y-auto">
+        {menuItems.map((item, index) => (
+          <MenuItemComponent
+            key={`${role}-${index}`}
+            item={item}
+            pathname={pathname}
+            onNavigate={onNavigate}
+          />
+        ))}
+      </nav>
+
+      {/* User profile snippet */}
+      <div className="p-4 border-t border-white/10">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full bg-[#C8A96A]/20 flex items-center justify-center text-[#C8A96A] font-bold text-sm">
+            {user?.name?.[0]?.toUpperCase() ?? "U"}
+          </div>
+          <div className="overflow-hidden">
+            <p className="text-sm font-semibold text-white truncate">{user?.name ?? "User"}</p>
+            <p className="text-xs text-white/40 truncate max-w-[30.5px]">{user?.email}</p>
+          </div>
+        </div>
+      </div>
     </>
   );
 }
