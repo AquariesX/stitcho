@@ -14,3 +14,17 @@ export async function verifyFirebaseToken(request: NextRequest | Request) {
     return { uid: null, error: "Invalid or expired token" };
   }
 }
+
+export async function verifyDashboardUser(request: NextRequest | Request) {
+  const auth = await verifyFirebaseToken(request);
+  if (auth.error || !auth.uid) return { error: auth.error, user: null };
+
+  const { prisma } = await import("@/lib/prisma");
+  const user = await prisma.user.findUnique({
+    where: { firebaseUid: auth.uid },
+  });
+  if (!user || !user.isActive || !["ADMIN", "TAILOR"].includes(user.role)) {
+    return { error: "Access denied", user: null };
+  }
+  return { error: null, user };
+}

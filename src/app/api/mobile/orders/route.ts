@@ -1,90 +1,53 @@
 import { NextRequest } from "next/server";
+import { OrderStatus, PaymentStatus, PreviewView } from "@prisma/client";
 import { verifyFirebaseToken } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { estimateDelivery } from "@/lib/delivery-estimation";
 import { createAuditLog } from "@/lib/audit-log";
 import { apiSuccess, apiError, API_ERRORS } from "@/lib/api-response";
-import { OrderStatus, PaymentStatus } from "@prisma/client";
+import {
+  customizationSnapshot,
+  CustomizationError,
+  validateCustomization,
+} from "@/lib/product-customization";
+import { validateMeasurementsForProduct } from "@/lib/measurement-validation";
 
 async function resolveCustomer(uid: string) {
   return prisma.customer.findUnique({ where: { firebaseUid: uid } });
 }
 
-/**
- * GET /api/mobile/orders
- * Returns the logged-in customer's orders with full details.
- * Header: Authorization: Bearer <firebase_id_token>
- */
 export async function GET(request: NextRequest) {
   const { uid, error } = await verifyFirebaseToken(request);
   if (error || !uid) return apiError(API_ERRORS.INVALID_TOKEN, 401);
-
   const customer = await resolveCustomer(uid);
   if (!customer) return apiError(API_ERRORS.CUSTOMER_NOT_FOUND, 404);
 
   try {
     const orders = await prisma.order.findMany({
-      where: { customerId: customer.id }, // ownership enforced
+      where: { customerId: customer.id },
       include: {
-        product: { select: { id: true, name: true, imageUrl: true } },
-        fabric: { select: { id: true, name: true, imageUrl: true } },
-        color: { select: { id: true, name: true, hexCode: true } },
+        product: true,
+        fabric: true,
+        color: true,
         measurement: true,
-        payment: { select: { status: true, amount: true, currency: true } },
-        tailor: {
-          select: {
-            id: true,
-            name: true,
-            shopProfile: { select: { shopName: true, phoneNumber: true } },
-          },
-        },
+        payment: true,
+        tailor: { include: { shopProfile: true } },
         orderStyles: {
-          include: {
-            styleOption: {
-              include: { style: { select: { name: true } } },
-            },
-          },
+          include: { styleOption: { include: { style: true } } },
         },
       },
       orderBy: { createdAt: "desc" },
     });
-
-    const serialized = orders.map((o) => ({
-      ...o,
-      totalPrice: Number(o.totalPrice),
-      measurement: {
-        ...o.measurement,
-        neck: Number(o.measurement.neck),
-        chest: Number(o.measurement.chest),
-        stomach: Number(o.measurement.stomach),
-        length: Number(o.measurement.length),
-        shoulder: Number(o.measurement.shoulder),
-        sleeve: Number(o.measurement.sleeve),
-      },
-      payment: o.payment
-        ? { ...o.payment, amount: Number(o.payment.amount) }
-        : null,
-    }));
-
-    return apiSuccess(serialized);
+    return apiSuccess(orders);
   } catch (err) {
     console.error("[API] mobile/orders GET error:", err);
     return apiError(API_ERRORS.SERVER_ERROR, 500);
   }
 }
 
-/**
- * POST /api/mobile/orders
- * Places a new order. Validates all IDs, estimates delivery, creates payment record.
- * Header: Authorization: Bearer <firebase_id_token>
- * Body: { productId, fabricId, colorId, measurementId, tailorId, addressId?,
- *         totalPrice, notes?, referenceImageUrl?, paymentMethod? (STRIPE|COD),
- *         styleOptionIds? }
- */
 export async function POST(request: NextRequest) {
   const { uid, error } = await verifyFirebaseToken(request);
   if (error || !uid) return apiError(API_ERRORS.INVALID_TOKEN, 401);
-
   const customer = await resolveCustomer(uid);
   if (!customer) return apiError(API_ERRORS.CUSTOMER_NOT_FOUND, 404);
 
@@ -97,113 +60,147 @@ export async function POST(request: NextRequest) {
       measurementId,
       tailorId,
       addressId,
-      totalPrice,
       notes,
       referenceImageUrl,
       paymentMethod = "STRIPE",
-      styleOptionIds = [] as number[],
+      styleOptionIds = [],
     } = body;
 
-    // ── Validate required fields ──
-    if (!productId || !fabricId || !colorId || !measurementId || !tailorId || !totalPrice) {
-      return apiError("productId, fabricId, colorId, measurementId, tailorId, and totalPrice are required", 400);
+    if (!productId || !fabricId || !colorId || !measurementId || !tailorId) {
+      return apiError(
+        "productId, fabricId, colorId, measurementId, and tailorId are required",
+        400
+      );
+    }
+    if (!["STRIPE", "COD"].includes(paymentMethod)) {
+      return apiError("paymentMethod must be STRIPE or COD", 400);
     }
 
-    if (totalPrice <= 0) {
-      return apiError("totalPrice must be greater than 0", 400);
-    }
+    const customization = await validateCustomization({
+      productId: Number(productId),
+      fabricId: Number(fabricId),
+      colorId: Number(colorId),
+      styleOptionIds: Array.isArray(styleOptionIds)
+        ? styleOptionIds.map(Number)
+        : [],
+      view: PreviewView.FRONT,
+    });
 
-    // ── Verify all referenced entities exist ──
-    const [product, fabric, color, measurement, tailor] = await Promise.all([
-      prisma.product.findUnique({ where: { id: Number(productId) } }),
-      prisma.fabric.findUnique({ where: { id: Number(fabricId) } }),
-      prisma.color.findUnique({ where: { id: Number(colorId) } }),
+    const [measurement, tailor, address] = await Promise.all([
       prisma.measurement.findUnique({ where: { id: Number(measurementId) } }),
       prisma.user.findUnique({ where: { id: Number(tailorId) } }),
+      addressId
+        ? prisma.address.findFirst({
+            where: { id: Number(addressId), customerId: customer.id },
+          })
+        : null,
     ]);
-
-    if (!product || !product.isAvailable) return apiError("Product not found or unavailable", 404);
-    if (!fabric || !fabric.isAvailable) return apiError("Fabric not found or out of stock", 404);
-    if (!color) return apiError("Color not found", 404);
     if (!measurement) return apiError("Measurement not found", 404);
-    if (!tailor || tailor.role !== "TAILOR") return apiError("Tailor not found or invalid", 404);
+    if (!tailor || tailor.role !== "TAILOR" || !tailor.isActive) {
+      return apiError("Tailor not found or invalid", 404);
+    }
+    if (addressId && !address) return apiError("Delivery address not found", 404);
 
-    // ── Estimate delivery date ──
+    const measurementValidation = validateMeasurementsForProduct(
+      customization.product.productType!,
+      {
+        scale: measurement.scale,
+        neck: measurement.neck?.toNumber(),
+        chest: measurement.chest?.toNumber(),
+        stomach: measurement.stomach?.toNumber(),
+        length: measurement.length?.toNumber(),
+        shoulder: measurement.shoulder?.toNumber(),
+        sleeve: measurement.sleeve?.toNumber(),
+        waist: measurement.waist?.toNumber(),
+        hip: measurement.hip?.toNumber(),
+        inseam: measurement.inseam?.toNumber(),
+        thigh: measurement.thigh?.toNumber(),
+        wrist: measurement.wrist?.toNumber(),
+      }
+    );
+    if (!measurementValidation.valid) {
+      return apiError(measurementValidation.warnings.join("; "), 400);
+    }
+
     const delivery = await estimateDelivery(Number(tailorId));
+    const paymentStatus =
+      paymentMethod === "COD"
+        ? PaymentStatus.COD_PENDING
+        : PaymentStatus.REQUIRES_PAYMENT;
 
-    // ── Determine initial payment status ──
-    const initialPaymentStatus: PaymentStatus =
-      paymentMethod === "COD" ? ("COD_PENDING" as any) : PaymentStatus.REQUIRES_PAYMENT;
-
-    // ── Create order + payment in a transaction ──
     const order = await prisma.$transaction(async (tx) => {
-      const newOrder = await (tx.order as any).create({
+      const created = await tx.order.create({
         data: {
           customerId: customer.id,
-          productId: Number(productId),
-          fabricId: Number(fabricId),
-          colorId: Number(colorId),
+          productId: customization.product.id,
+          fabricId: customization.fabricLink.fabricId,
+          colorId: customization.colorLink.colorId,
           measurementId: Number(measurementId),
           tailorId: Number(tailorId),
-          addressId: addressId ? Number(addressId) : undefined,
-          totalPrice: Number(totalPrice),
+          addressId: address?.id,
+          totalPrice: customization.price.total,
           status: OrderStatus.PENDING,
           notes: notes ?? undefined,
           referenceImageUrl: referenceImageUrl ?? undefined,
           paymentMethod,
           estimatedDeliveryDate: delivery.estimatedDeliveryDate,
-          // Create status history entry
+          previewType: customization.product.previewType,
+          previewFrontUrl: customization.product.frontPreviewAsset,
+          previewBackUrl: customization.product.backPreviewAsset,
+          previewGeneratedAt: new Date(),
+          customizationSnapshot: customizationSnapshot(customization),
           statusHistory: {
-            create: { status: OrderStatus.PENDING, note: "Order placed by customer" },
+            create: {
+              status: OrderStatus.PENDING,
+              note: "Order placed by customer",
+            },
+          },
+          orderStyles: {
+            create: customization.selected.map(({ styleOption }) => ({
+              styleOptionId: styleOption.id,
+            })),
+          },
+          payment: {
+            create: {
+              stripePaymentIntentId: "PENDING",
+              amount: customization.price.total,
+              currency: "PKR",
+              status: paymentStatus,
+            },
           },
         },
       });
-
-      // Attach style options if provided
-      if (styleOptionIds.length > 0) {
-        await tx.orderStyle.createMany({
-          data: styleOptionIds.map((soId: number) => ({
-            orderId: newOrder.id,
-            styleOptionId: soId,
-          })),
-        });
-      }
-
-      // Create payment record
-      await tx.payment.create({
-        data: {
-          orderId: newOrder.id,
-          stripePaymentIntentId: "PENDING",
-          amount: Number(totalPrice),
-          currency: "PKR",
-          status: initialPaymentStatus,
-        },
-      });
-
-      return newOrder;
+      return created;
     });
 
     await createAuditLog({
       action: "CREATE_ORDER",
       module: "Orders",
       entityId: order.id,
-      newValue: { customerId: customer.id, tailorId, totalPrice, paymentMethod },
+      newValue: {
+        customerId: customer.id,
+        tailorId,
+        totalPrice: customization.price.total.toFixed(2),
+        paymentMethod,
+      },
     });
 
     return apiSuccess(
       {
         orderId: order.id,
         status: order.status,
+        totalPrice: customization.price.total.toFixed(2),
         estimatedDelivery: {
           date: delivery.estimatedDeliveryDate,
           label: delivery.label,
         },
         paymentMethod,
-        paymentStatus: initialPaymentStatus,
+        paymentStatus,
       },
       201
     );
   } catch (err) {
+    if (err instanceof CustomizationError) return apiError(err.message, err.status);
     console.error("[API] mobile/orders POST error:", err);
     return apiError(API_ERRORS.SERVER_ERROR, 500);
   }

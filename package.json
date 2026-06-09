@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "backfill:catalog": "tsx scripts/backfill-product-customization.ts",
+    "backfill:catalog:apply": "tsx scripts/backfill-product-customization.ts --apply",
+    "test:catalog": "tsx --test tests/catalog-validation.test.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
@@ -22,7 +25,8 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "stripe": "^22.0.2",
-    "tailwind-merge": "^3.4.0"
+    "tailwind-merge": "^3.4.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

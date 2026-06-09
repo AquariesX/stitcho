@@ -1,630 +1,138 @@
-'use client';
+"use client";
 
-import { useState, useRef, useMemo, useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { storage } from "@/lib/firebase";
+import { useAuth } from "@/context/AuthContext";
 import {
-    createStyle, updateStyle, deleteStyle, getStyles,
-    createStyleOption, updateStyleOption, deleteStyleOption,
-} from '@/app/actions/style-actions';
-import { useAuth } from '@/context/AuthContext';
-import {
-    Plus, Trash2, Image as ImageIcon, Search, X, Edit3, UploadCloud,
-    Loader2, AlertTriangle, Wand2, ChevronDown, Layers
-} from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { storage } from '@/lib/firebase';
+  createStyle,
+  createStyleOption,
+  deleteStyle,
+  deleteStyleOption,
+  getStyles,
+  updateStyle,
+  updateStyleOption,
+} from "@/app/actions/style-actions";
+import { PREVIEW_TYPE_BY_PRODUCT, PRODUCT_TYPE_LABELS } from "@/lib/catalog-types";
+import { Loader2, Plus, Trash2, X } from "lucide-react";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-interface StyleOption {
-    id: number;
-    styleId: number;
-    name: string;
-    imageUrl: string;
-    additionalPrice: any;
-    createdAt: Date | string;
-}
-
-interface Style {
-    id: number;
-    name: string;
-    imageUrl: string;
-    options: StyleOption[];
-    createdAt: Date | string;
-    user?: { name: string; shopProfile?: { shopName: string } };
-}
-
-// ─── Animation variants ──────────────────────────────────────────────────────
-const backdropVariants = { hidden: { opacity: 0 }, visible: { opacity: 1 } };
-
-const modalVariants = {
-    hidden: { opacity: 0, scale: 0.85, y: 40 },
-    visible: { opacity: 1, scale: 1, y: 0, transition: { type: 'spring' as const, stiffness: 260, damping: 22 } },
-    exit: { opacity: 0, scale: 0.85, y: 40, transition: { duration: 0.2 } },
+type ProductType = keyof typeof PRODUCT_TYPE_LABELS;
+type GroupType = "COLLAR"|"NECK"|"SLEEVE"|"CUFF"|"POCKET"|"PLACKET"|"FIT"|"SHALWAR_STYLE"|"WAIST"|"FRONT"|"BOTTOM";
+type Option = {
+  id:number; styleId:number; name:string; imageUrl:string; additionalPrice:string;
+  overlayKey?:string|null; frontOverlayAsset?:string|null; backOverlayAsset?:string|null;
+  overlayImageUrl?:string|null; styleType?:"COLLAR"|"CUFF"|"POCKET"|"BUTTON"|"OTHER"|null; zIndex:number;
+  assetStorageType:"LOCAL"|"REMOTE"; isDefault:boolean; isAvailable:boolean; displayOrder:number;
+};
+type Style = {
+  id:number; name:string; imageUrl?:string|null; productType:ProductType; groupType:GroupType;
+  isRequired:boolean; allowMultiple:boolean; displayOrder:number; isAvailable:boolean; options:Option[];
 };
 
-const cardVariants = {
-    hidden: { opacity: 0, y: 30 },
-    visible: (i: number) => ({
-        opacity: 1, y: 0,
-        transition: { delay: i * 0.06, type: 'spring' as const, stiffness: 200, damping: 20 },
-    }),
-};
+const groupTypes: GroupType[] = ["COLLAR","NECK","SLEEVE","CUFF","POCKET","PLACKET","FIT","SHALWAR_STYLE","WAIST","FRONT","BOTTOM"];
+const blankGroup = { name:"", imageUrl:"", productType:"FORMAL_SHIRT" as ProductType, groupType:"COLLAR" as GroupType, isRequired:false, allowMultiple:false, displayOrder:"0", isAvailable:true };
+const blankOption = { name:"", imageUrl:"", additionalPrice:"0.00", overlayKey:"", overlayImageUrl:"", styleType:"OTHER" as "COLLAR"|"CUFF"|"POCKET"|"BUTTON"|"OTHER", zIndex:"30", frontOverlayAsset:"", backOverlayAsset:"", assetStorageType:"LOCAL" as "LOCAL"|"REMOTE", isDefault:false, isAvailable:true, displayOrder:"0" };
 
-// ─── Modal Types ─────────────────────────────────────────────────────────────
-type ModalMode =
-    | { type: 'style'; edit?: Style }
-    | { type: 'option'; styleId: number; edit?: StyleOption }
-    | null;
-
-// ─── Page Component ──────────────────────────────────────────────────────────
 export default function StylesPage() {
-    const { role, user } = useAuth();
-    const [styles, setStyles] = useState<Style[]>([]);
-    const [pageLoading, setPageLoading] = useState(true);
-    const [modal, setModal] = useState<ModalMode>(null);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
-    const [searchQuery, setSearchQuery] = useState('');
-    const [expandedStyleId, setExpandedStyleId] = useState<number | null>(null);
-    const [deleteTarget, setDeleteTarget] = useState<{ type: 'style' | 'option'; id: number } | null>(null);
-    const [deleting, setDeleting] = useState(false);
+  const { role,user } = useAuth();
+  const [items,setItems] = useState<Style[]>([]);
+  const [loading,setLoading] = useState(true);
+  const [saving,setSaving] = useState(false);
+  const [error,setError] = useState("");
+  const [filter,setFilter] = useState<ProductType|"ALL">("ALL");
+  const [groupOpen,setGroupOpen] = useState(false);
+  const [optionOpen,setOptionOpen] = useState(false);
+  const [groupForm,setGroupForm] = useState(blankGroup);
+  const [optionForm,setOptionForm] = useState(blankOption);
+  const [editingGroup,setEditingGroup] = useState<Style|null>(null);
+  const [editingOption,setEditingOption] = useState<Option|null>(null);
+  const [optionStyle,setOptionStyle] = useState<Style|null>(null);
+  const imageInput = useRef<HTMLInputElement>(null);
+  const [uploadTarget,setUploadTarget] = useState<"group"|"option"|"overlay">("group");
 
-    // Form state
-    const [formName, setFormName] = useState('');
-    const [formImageUrl, setFormImageUrl] = useState('');
-    const [formAdditionalPrice, setFormAdditionalPrice] = useState('0');
-    const [uploading, setUploading] = useState(false);
-    const fileInputRef = useRef<HTMLInputElement>(null);
+  async function refresh() {
+    const result = await getStyles(role,user?.id);
+    if (result.success) setItems((result.data ?? []) as unknown as Style[]);
+  }
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    getStyles(role, user.id).then((result) => {
+      if (!active) return;
+      if (result.success) setItems((result.data ?? []) as unknown as Style[]);
+      setLoading(false);
+    });
+    return () => { active = false; };
+  }, [role,user]);
+  const filtered = useMemo(()=>items.filter((item)=>filter==="ALL"||item.productType===filter),[items,filter]);
 
-    // ── Fetch ──
-    useEffect(() => {
-        async function fetchData() {
-            if (!user) return;
-            const result = await getStyles(role, user.id);
-            if (result.success && result.data) setStyles(result.data as Style[]);
-            setPageLoading(false);
-        }
-        fetchData();
-    }, [role, user]);
+  function showGroup(item?:Style) {
+    setEditingGroup(item??null);
+    setGroupForm(item ? {name:item.name,imageUrl:item.imageUrl??"",productType:item.productType,groupType:item.groupType,isRequired:item.isRequired,allowMultiple:item.allowMultiple,displayOrder:String(item.displayOrder),isAvailable:item.isAvailable} : blankGroup);
+    setError(""); setGroupOpen(true);
+  }
+  function showOption(style:Style,item?:Option) {
+    const preview = PREVIEW_TYPE_BY_PRODUCT[style.productType];
+    setOptionStyle(style); setEditingOption(item??null);
+    setOptionForm(item ? {name:item.name,imageUrl:item.imageUrl,additionalPrice:String(item.additionalPrice),overlayKey:item.overlayKey??"",overlayImageUrl:item.overlayImageUrl??"",styleType:item.styleType??"OTHER",zIndex:String(item.zIndex??30),frontOverlayAsset:item.frontOverlayAsset??"",backOverlayAsset:item.backOverlayAsset??"",assetStorageType:item.assetStorageType,isDefault:item.isDefault,isAvailable:item.isAvailable,displayOrder:String(item.displayOrder)} : {...blankOption,frontOverlayAsset:`assets/previews/${preview}/styles/`,backOverlayAsset:`assets/previews/${preview}/styles/`});
+    setError(""); setOptionOpen(true);
+  }
+  async function upload(file?:File) {
+    if (!file) return;
+    if(uploadTarget==="overlay"){
+      if(file.type!=="image/png"&&!file.name.toLowerCase().endsWith(".png")){setError("Style overlays must be PNG; JPG/JPEG is rejected.");return;}
+      const bitmap=await createImageBitmap(file);
+      if(bitmap.width!==1080||bitmap.height!==1440){bitmap.close();setError("Style overlays must be 1080x1440 pixels.");return;}
+      const canvas=document.createElement("canvas");canvas.width=bitmap.width;canvas.height=bitmap.height;
+      const context=canvas.getContext("2d",{willReadFrequently:true});context?.drawImage(bitmap,0,0);bitmap.close();
+      const pixels=context?.getImageData(0,0,canvas.width,canvas.height).data;
+      if(pixels&&!pixels.some((value,index)=>index%4===3&&value<255)){setError("Style overlay PNG must contain transparent pixels.");return;}
+    } else if(!["image/jpeg","image/png"].includes(file.type)){setError("Selector thumbnails must be JPG or PNG.");return;}
+    const location = ref(storage,`${uploadTarget==="overlay"?"style_overlays":"style_thumbnails"}/${Date.now()}_${file.name}`);
+    await uploadBytes(location,file); const url=await getDownloadURL(location);
+    if(uploadTarget==="group") setGroupForm((value)=>({...value,imageUrl:url}));
+    else if(uploadTarget==="option") setOptionForm((value)=>({...value,imageUrl:url}));
+    else setOptionForm((value)=>({...value,overlayImageUrl:url}));
+  }
+  async function saveGroup(event:React.FormEvent) {
+    event.preventDefault(); setSaving(true); setError("");
+    const data=new FormData(); Object.entries(groupForm).forEach(([key,value])=>data.set(key,String(value))); if(user?.id)data.set("userId",String(user.id));
+    const result=editingGroup?await updateStyle(editingGroup.id,data):await createStyle(data);
+    if(!result.success){setError(result.error??"Unable to save style group.");setSaving(false);return;}
+    await refresh();setGroupOpen(false);setSaving(false);
+  }
+  async function saveOption(event:React.FormEvent) {
+    event.preventDefault(); if(!optionStyle)return; setSaving(true);setError("");
+    const data=new FormData();Object.entries(optionForm).forEach(([key,value])=>data.set(key,String(value)));data.set("styleId",String(optionStyle.id));
+    const result=editingOption?await updateStyleOption(editingOption.id,data):await createStyleOption(data);
+    if(!result.success){setError(result.error??"Unable to save option.");setSaving(false);return;}
+    await refresh();setOptionOpen(false);setSaving(false);
+  }
+  if(loading)return <div className="flex h-[60vh] items-center justify-center"><Loader2 className="animate-spin"/></div>;
 
-    // ── Filter ──
-    const filteredStyles = useMemo(() => {
-        if (!searchQuery.trim()) return styles;
-        const q = searchQuery.toLowerCase();
-        return styles.filter(
-            (s) =>
-                s.name.toLowerCase().includes(q) ||
-                s.options.some((o) => o.name.toLowerCase().includes(q))
-        );
-    }, [styles, searchQuery]);
+  return <div className="mx-auto max-w-7xl space-y-6 text-black">
+    <header className="flex flex-col justify-between gap-4 rounded-3xl bg-[#223943] p-7 text-white sm:flex-row sm:items-center"><div><h1 className="text-3xl font-bold">Style Groups</h1><p className="text-white/70">Create structured, product-specific options and preview overlays.</p></div><button onClick={()=>showGroup()} className="flex items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 font-bold text-[#223943]"><Plus size={18}/> Add Group</button></header>
+    <div className="flex flex-wrap gap-2"><button onClick={()=>setFilter("ALL")} className={`rounded-full px-4 py-2 text-sm ${filter==="ALL"?"bg-[#223943] text-white":"bg-white border"}`}>All</button>{Object.entries(PRODUCT_TYPE_LABELS).map(([type,label])=><button key={type} onClick={()=>setFilter(type as ProductType)} className={`rounded-full px-4 py-2 text-sm ${filter===type?"bg-[#223943] text-white":"bg-white border"}`}>{label}</button>)}</div>
+    <div className="space-y-4">{filtered.map((style)=><section key={style.id} className="rounded-2xl border bg-white p-5">
+      <div className="flex flex-col justify-between gap-3 sm:flex-row"><div className="flex gap-3">{style.imageUrl&&<div className="relative h-14 w-14 overflow-hidden rounded-xl"><Image unoptimized fill sizes="56px" src={style.imageUrl} alt={style.name} className="object-cover"/></div>}<div><div className="flex flex-wrap items-center gap-2"><h2 className="text-lg font-bold">{style.name}</h2><Badge>{style.groupType}</Badge><Badge>{PRODUCT_TYPE_LABELS[style.productType]}</Badge>{style.isRequired&&<Badge>Required</Badge>}{style.allowMultiple&&<Badge>Multiple</Badge>}</div><p className="text-xs text-gray-500">Display order {style.displayOrder} · {style.isAvailable?"Available":"Hidden"}</p></div></div>
+      <div className="flex gap-2"><button onClick={()=>showOption(style)} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm text-white">Add Option</button><button onClick={()=>showGroup(style)} className="rounded-lg bg-[#223943] px-3 py-2 text-sm text-white">Edit Group</button><button onClick={async()=>{if(!confirm(`Delete ${style.name}?`))return;const result=await deleteStyle(style.id);if(result.success)await refresh();else alert(result.error);}} className="rounded-lg border border-red-200 p-2 text-red-600"><Trash2 size={16}/></button></div></div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{style.options.map((option)=><article key={option.id} className="rounded-xl border p-3">
+        <div className="flex gap-3">{option.imageUrl&&<div className="relative h-12 w-12 overflow-hidden rounded-lg"><Image unoptimized fill sizes="48px" src={option.imageUrl} alt={option.name} className="object-cover"/></div>}<div className="min-w-0"><strong>{option.name}</strong><p className="text-xs text-gray-500">PKR {Number(option.additionalPrice).toLocaleString()}</p></div></div>
+        <div className="mt-3 flex flex-wrap gap-1 text-xs"><Badge>{option.isDefault?"Default":"Optional"}</Badge><Badge>{option.frontOverlayAsset?"Front ✓":"Front missing"}</Badge><Badge>{option.backOverlayAsset?"Back ✓":"Back missing"}</Badge></div>
+        <div className="mt-3 flex gap-2"><button onClick={()=>showOption(style,option)} className="rounded-lg border px-3 py-1.5 text-xs">Edit</button><button onClick={async()=>{if(!confirm(`Delete ${option.name}?`))return;const result=await deleteStyleOption(option.id);if(result.success)await refresh();else alert(result.error);}} className="text-xs text-red-600">Delete</button></div>
+      </article>)}</div>{!style.options.length&&<p className="mt-4 rounded-xl bg-gray-50 p-5 text-center text-sm text-gray-500">No options in this group.</p>}
+    </section>)}</div>
 
-    // ── Refresh all styles from DB ──
-    async function refreshStyles() {
-        if (!user) return;
-        const result = await getStyles(role, user.id);
-        if (result.success && result.data) setStyles(result.data as Style[]);
-    }
-
-    // ── Modal helpers ──
-    function openStyleModal(edit?: Style) {
-        setFormName(edit?.name || '');
-        setFormImageUrl(edit?.imageUrl || '');
-        setFormAdditionalPrice('0');
-        setError('');
-        setModal({ type: 'style', edit });
-    }
-
-    function openOptionModal(styleId: number, edit?: StyleOption) {
-        setFormName(edit?.name || '');
-        setFormImageUrl(edit?.imageUrl || '');
-        setFormAdditionalPrice(edit ? String(edit.additionalPrice) : '0');
-        setError('');
-        setModal({ type: 'option', styleId, edit });
-    }
-
-    function closeModal() {
-        setModal(null);
-        setError('');
-    }
-
-    // ── Firebase upload ──
-    async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        setUploading(true);
-        try {
-            const folder = modal?.type === 'style' ? 'style_images' : 'style_option_images';
-            const storageRef = ref(storage, `${folder}/${Date.now()}_${file.name}`);
-            await uploadBytes(storageRef, file);
-            const url = await getDownloadURL(storageRef);
-            setFormImageUrl(url);
-        } catch {
-            setError('Failed to upload image.');
-        } finally {
-            setUploading(false);
-        }
-    }
-
-    // ── Submit ──
-    async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-        e.preventDefault();
-        setLoading(true);
-        setError('');
-
-        const formData = new FormData();
-        formData.set('name', formName);
-        formData.set('imageUrl', formImageUrl);
-
-        if (modal?.type === 'style') {
-            if (user?.id) formData.set('userId', String(user.id));
-            if (modal.edit) {
-                const res = await updateStyle(modal.edit.id, formData);
-                if (!res.success) { setError(res.error || 'Failed'); setLoading(false); return; }
-            } else {
-                const res = await createStyle(formData);
-                if (!res.success) { setError(res.error || 'Failed'); setLoading(false); return; }
-            }
-        } else if (modal?.type === 'option') {
-            formData.set('styleId', String(modal.styleId));
-            formData.set('additionalPrice', formAdditionalPrice);
-            if (modal.edit) {
-                const res = await updateStyleOption(modal.edit.id, formData);
-                if (!res.success) { setError(res.error || 'Failed'); setLoading(false); return; }
-            } else {
-                const res = await createStyleOption(formData);
-                if (!res.success) { setError(res.error || 'Failed'); setLoading(false); return; }
-            }
-        }
-
-        await refreshStyles();
-        closeModal();
-        setLoading(false);
-    }
-
-    // ── Delete ──
-    async function handleDelete() {
-        if (!deleteTarget) return;
-        setDeleting(true);
-        const res = deleteTarget.type === 'style'
-            ? await deleteStyle(deleteTarget.id)
-            : await deleteStyleOption(deleteTarget.id);
-        if (!res.success) { alert(res.error || 'Failed to delete'); }
-        await refreshStyles();
-        setDeleteTarget(null);
-        setDeleting(false);
-    }
-
-    // ── Price format ──
-    function formatPrice(price: any) {
-        const n = Number(price);
-        if (n === 0) return 'Free';
-        return '+' + n.toLocaleString('en-PK', { style: 'currency', currency: 'PKR', minimumFractionDigits: 0, maximumFractionDigits: 0 });
-    }
-
-    // ── Loading ──
-    if (pageLoading) {
-        return (
-            <div className="flex items-center justify-center h-[60vh]">
-                <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col items-center gap-4">
-                    <Loader2 size={44} className="animate-spin text-[#223943]" />
-                    <p className="text-sm font-medium text-gray-500">Loading styles…</p>
-                </motion.div>
-            </div>
-        );
-    }
-
-    // ─── JSX ─────────────────────────────────────────────────────────────────
-    return (
-        <div className="max-w-7xl mx-auto space-y-8">
-            {/* ── Hero ── */}
-            <motion.div
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-gradient-to-r from-[#223943] to-[#2c4a57] rounded-3xl p-8 text-white shadow-2xl relative overflow-hidden"
-            >
-                <div className="absolute top-0 right-0 w-72 h-72 bg-white/5 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
-                <div className="absolute bottom-0 left-0 w-56 h-56 bg-white/5 rounded-full blur-2xl -ml-14 -mb-14 pointer-events-none" />
-
-                <div className="relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
-                    <div>
-                        <div className="flex items-center gap-3 mb-2">
-                            <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center">
-                                <Wand2 size={24} />
-                            </div>
-                            <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Styles</h1>
-                        </div>
-                        <p className="text-white/70 max-w-xl text-lg">
-                            Define customization styles and their options. Each style (e.g. Collar, Cuff) has multiple options customers can choose from.
-                        </p>
-                    </div>
-                    <motion.button
-                        whileHover={{ scale: 1.04 }}
-                        whileTap={{ scale: 0.97 }}
-                        onClick={() => openStyleModal()}
-                        className="flex items-center gap-2 bg-white text-[#223943] px-6 py-3 rounded-xl font-bold shadow-lg hover:shadow-xl transition-all"
-                    >
-                        <Plus size={20} />
-                        Add Style
-                    </motion.button>
-                </div>
-            </motion.div>
-
-            {/* ── Toolbar ── */}
-            <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
-                className="flex flex-col sm:flex-row gap-4 items-center justify-between"
-            >
-                <div className="relative w-full sm:max-w-sm">
-                    <Search className="absolute top-1/2 left-4 -translate-y-1/2 text-gray-400" size={18} />
-                    <input
-                        type="text"
-                        placeholder="Search styles or options…"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-11 pr-10 py-3 rounded-xl border border-gray-200 bg-white shadow-sm focus:ring-2 focus:ring-[#223943] focus:border-transparent outline-none transition-all text-black placeholder:text-gray-400"
-                    />
-                    {searchQuery && (
-                        <button onClick={() => setSearchQuery('')} className="absolute top-1/2 right-3 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                            <X size={16} />
-                        </button>
-                    )}
-                </div>
-
-                <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-5 py-2.5 shadow-sm">
-                    <Layers size={18} className="text-[#223943]" />
-                    <span className="text-sm font-medium text-black">
-                        {filteredStyles.length} {filteredStyles.length === 1 ? 'style' : 'styles'}
-                        <span className="text-gray-400 ml-1">
-                            · {filteredStyles.reduce((sum, s) => sum + s.options.length, 0)} options
-                        </span>
-                    </span>
-                </div>
-            </motion.div>
-
-            {/* ── Styles List ── */}
-            {filteredStyles.length === 0 ? (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center py-20 text-center">
-                    <div className="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center mb-4">
-                        <Wand2 size={36} className="text-gray-300" />
-                    </div>
-                    <h3 className="text-lg font-semibold text-black mb-1">
-                        {searchQuery ? 'No matching styles' : 'No styles yet'}
-                    </h3>
-                    <p className="text-gray-500 text-sm max-w-xs">
-                        {searchQuery ? 'Try adjusting your search.' : 'Click "Add Style" to create your first customization style.'}
-                    </p>
-                </motion.div>
-            ) : (
-                <div className="space-y-5">
-                    <AnimatePresence mode="popLayout">
-                        {filteredStyles.map((style, i) => {
-                            const isExpanded = expandedStyleId === style.id;
-                            return (
-                                <motion.div
-                                    key={style.id}
-                                    custom={i}
-                                    variants={cardVariants}
-                                    initial="hidden"
-                                    animate="visible"
-                                    exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
-                                    layout
-                                    className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden"
-                                >
-                                    {/* Style Header */}
-                                    <div
-                                        className="flex items-center gap-4 p-5 cursor-pointer select-none"
-                                        onClick={() => setExpandedStyleId(isExpanded ? null : style.id)}
-                                    >
-                                        {/* Thumbnail */}
-                                        <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden shrink-0 border border-gray-200">
-                                            {style.imageUrl ? (
-                                                <img src={style.imageUrl} alt={style.name} className="w-full h-full object-cover" />
-                                            ) : (
-                                                <div className="w-full h-full flex items-center justify-center">
-                                                    <Wand2 size={22} className="text-gray-300" />
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Info */}
-                                        <div className="flex-1 min-w-0">
-                                            <h3 className="text-lg font-bold text-black truncate">{style.name}</h3>
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <p className="text-xs text-gray-500">
-                                                    {style.options.length} {style.options.length === 1 ? 'option' : 'options'}
-                                                </p>
-                                                {role === 'admin' && style.user && (
-                                                    <span className="px-2 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-semibold rounded-md shadow-sm">
-                                                        By: {style.user.shopProfile?.shopName || style.user.name}
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* Actions */}
-                                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                                            <motion.button
-                                                whileHover={{ scale: 1.1 }}
-                                                whileTap={{ scale: 0.9 }}
-                                                onClick={() => openOptionModal(style.id)}
-                                                className="w-9 h-9 rounded-xl bg-[#223943]/10 flex items-center justify-center text-[#223943] hover:bg-[#223943] hover:text-white transition-colors"
-                                                title="Add option"
-                                            >
-                                                <Plus size={16} />
-                                            </motion.button>
-                                            <motion.button
-                                                whileHover={{ scale: 1.1 }}
-                                                whileTap={{ scale: 0.9 }}
-                                                onClick={() => openStyleModal(style)}
-                                                className="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center text-[#223943] hover:bg-[#223943] hover:text-white transition-colors"
-                                                title="Edit style"
-                                            >
-                                                <Edit3 size={14} />
-                                            </motion.button>
-                                            <motion.button
-                                                whileHover={{ scale: 1.1 }}
-                                                whileTap={{ scale: 0.9 }}
-                                                onClick={() => setDeleteTarget({ type: 'style', id: style.id })}
-                                                className="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center text-red-500 hover:bg-red-500 hover:text-white transition-colors"
-                                                title="Delete style"
-                                            >
-                                                <Trash2 size={14} />
-                                            </motion.button>
-                                        </div>
-
-                                        {/* Chevron */}
-                                        <motion.div
-                                            animate={{ rotate: isExpanded ? 180 : 0 }}
-                                            transition={{ duration: 0.25 }}
-                                        >
-                                            <ChevronDown size={20} className="text-gray-400" />
-                                        </motion.div>
-                                    </div>
-
-                                    {/* Options (expandable) */}
-                                    <AnimatePresence initial={false}>
-                                        {isExpanded && (
-                                            <motion.div
-                                                initial={{ height: 0, opacity: 0 }}
-                                                animate={{ height: 'auto', opacity: 1 }}
-                                                exit={{ height: 0, opacity: 0 }}
-                                                transition={{ duration: 0.3, ease: 'easeInOut' }}
-                                                className="overflow-hidden"
-                                            >
-                                                <div className="px-5 pb-5 border-t border-gray-100 pt-4">
-                                                    {style.options.length === 0 ? (
-                                                        <div className="text-center py-8">
-                                                            <p className="text-sm text-gray-400 mb-3">No options yet for this style</p>
-                                                            <button
-                                                                onClick={() => openOptionModal(style.id)}
-                                                                className="inline-flex items-center gap-2 text-sm text-[#223943] font-semibold hover:underline"
-                                                            >
-                                                                <Plus size={14} /> Add First Option
-                                                            </button>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                                                            {style.options.map((opt, idx) => (
-                                                                <motion.div
-                                                                    key={opt.id}
-                                                                    initial={{ opacity: 0, y: 10 }}
-                                                                    animate={{ opacity: 1, y: 0 }}
-                                                                    transition={{ delay: idx * 0.04 }}
-                                                                    className="group relative bg-gray-50 rounded-xl border border-gray-100 overflow-hidden hover:shadow-md transition-all"
-                                                                >
-                                                                    {/* Option Image */}
-                                                                    <div className="h-28 bg-gradient-to-br from-gray-100 to-gray-50 overflow-hidden">
-                                                                        {opt.imageUrl ? (
-                                                                            <img src={opt.imageUrl} alt={opt.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                                                                        ) : (
-                                                                            <div className="w-full h-full flex items-center justify-center">
-                                                                                <ImageIcon size={24} className="text-gray-200" />
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-
-                                                                    {/* Option Info */}
-                                                                    <div className="p-3">
-                                                                        <p className="text-xs font-bold text-black truncate">{opt.name}</p>
-                                                                        <p className="text-[10px] font-medium text-[#223943] mt-0.5">{formatPrice(opt.additionalPrice)}</p>
-                                                                    </div>
-
-                                                                    {/* Hover Actions */}
-                                                                    <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                        <button
-                                                                            onClick={() => openOptionModal(style.id, opt)}
-                                                                            className="w-6 h-6 rounded-md bg-white/90 shadow flex items-center justify-center text-[#223943] hover:bg-[#223943] hover:text-white transition-colors"
-                                                                        >
-                                                                            <Edit3 size={10} />
-                                                                        </button>
-                                                                        <button
-                                                                            onClick={() => setDeleteTarget({ type: 'option', id: opt.id })}
-                                                                            className="w-6 h-6 rounded-md bg-white/90 shadow flex items-center justify-center text-red-500 hover:bg-red-500 hover:text-white transition-colors"
-                                                                        >
-                                                                            <Trash2 size={10} />
-                                                                        </button>
-                                                                    </div>
-                                                                </motion.div>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
-                                </motion.div>
-                            );
-                        })}
-                    </AnimatePresence>
-                </div>
-            )}
-
-            {/* ── Delete Confirmation ── */}
-            <AnimatePresence>
-                {deleteTarget && (
-                    <motion.div
-                        variants={backdropVariants} initial="hidden" animate="visible" exit="hidden"
-                        onClick={() => !deleting && setDeleteTarget(null)}
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
-                    >
-                        <motion.div
-                            variants={modalVariants} initial="hidden" animate="visible" exit="exit"
-                            onClick={(e) => e.stopPropagation()}
-                            className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center"
-                        >
-                            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-50 flex items-center justify-center">
-                                <AlertTriangle size={32} className="text-red-500" />
-                            </div>
-                            <h3 className="text-xl font-bold text-black mb-2">
-                                Delete {deleteTarget.type === 'style' ? 'Style' : 'Option'}?
-                            </h3>
-                            <p className="text-gray-500 text-sm mb-6">
-                                {deleteTarget.type === 'style'
-                                    ? 'This will permanently remove this style and ALL its options.'
-                                    : 'This option will be permanently removed.'}
-                            </p>
-                            <div className="flex gap-3 justify-center">
-                                <button onClick={() => setDeleteTarget(null)} disabled={deleting} className="px-6 py-2.5 rounded-xl border border-gray-200 text-black font-medium hover:bg-gray-50 transition-colors disabled:opacity-50">Cancel</button>
-                                <button onClick={handleDelete} disabled={deleting} className="px-6 py-2.5 rounded-xl bg-red-500 text-white font-medium hover:bg-red-600 transition-colors flex items-center gap-2 disabled:opacity-50">
-                                    {deleting && <Loader2 size={16} className="animate-spin" />}
-                                    {deleting ? 'Deleting…' : 'Delete'}
-                                </button>
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* ── Add / Edit Modal (Style or Option) ── */}
-            <AnimatePresence>
-                {modal && (
-                    <motion.div
-                        variants={backdropVariants} initial="hidden" animate="visible" exit="hidden"
-                        onClick={() => !loading && !uploading && closeModal()}
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
-                    >
-                        <motion.div
-                            variants={modalVariants} initial="hidden" animate="visible" exit="exit"
-                            onClick={(e) => e.stopPropagation()}
-                            className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[90vh] flex flex-col"
-                        >
-                            {/* Header */}
-                            <div className="bg-gradient-to-r from-[#223943] to-[#2c4a57] px-8 py-6 flex items-center justify-between shrink-0">
-                                <h2 className="text-xl font-bold text-white">
-                                    {modal.type === 'style'
-                                        ? modal.edit ? 'Edit Style' : 'Add New Style'
-                                        : modal.edit ? 'Edit Option' : 'Add Style Option'}
-                                </h2>
-                                <button
-                                    onClick={closeModal}
-                                    disabled={loading || uploading}
-                                    className="w-9 h-9 rounded-xl bg-white/10 backdrop-blur flex items-center justify-center text-white hover:bg-white/20 transition-colors disabled:opacity-50"
-                                >
-                                    <X size={18} />
-                                </button>
-                            </div>
-
-                            {/* Body */}
-                            <form onSubmit={handleSubmit} className="p-8 space-y-5 overflow-y-auto flex-1">
-                                {/* Error */}
-                                <AnimatePresence>
-                                    {error && (
-                                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-                                            <div className="text-red-600 text-sm bg-red-50 p-4 rounded-xl border border-red-200 flex items-center gap-2">
-                                                <AlertTriangle size={16} className="shrink-0" />{error}
-                                            </div>
-                                        </motion.div>
-                                    )}
-                                </AnimatePresence>
-
-                                {/* Name */}
-                                <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-black">
-                                        {modal.type === 'style' ? 'Style Name' : 'Option Name'}
-                                    </label>
-                                    <input
-                                        value={formName}
-                                        onChange={(e) => setFormName(e.target.value)}
-                                        required
-                                        placeholder={modal.type === 'style' ? 'e.g. Collar, Cuff, Pocket' : 'e.g. Band Collar, French Cuff'}
-                                        className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-black placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#223943] focus:bg-white transition-all"
-                                    />
-                                </div>
-
-                                {/* Additional Price (options only) */}
-                                {modal.type === 'option' && (
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-semibold text-black">Additional Price (PKR)</label>
-                                        <div className="relative">
-                                            <span className="absolute top-1/2 left-3 -translate-y-1/2 text-gray-400 text-sm font-medium">PKR</span>
-                                            <input
-                                                type="number"
-                                                step="0.01"
-                                                min="0"
-                                                value={formAdditionalPrice}
-                                                onChange={(e) => setFormAdditionalPrice(e.target.value)}
-                                                placeholder="0"
-                                                className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-12 pr-4 py-3 text-sm text-black placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#223943] focus:bg-white transition-all"
-                                            />
-                                        </div>
-                                        <p className="text-xs text-gray-500">Extra charge for this option (0 = no extra cost)</p>
-                                    </div>
-                                )}
-
-                                {/* Image Upload */}
-                                <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-black">Image</label>
-                                    <div
-                                        onClick={() => !uploading && fileInputRef.current?.click()}
-                                        className={`
-                                            relative flex flex-col items-center justify-center w-full h-36 border-2 border-dashed rounded-2xl cursor-pointer transition-all
-                                            ${formImageUrl ? 'border-[#223943]/30 bg-[#223943]/5' : 'border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-gray-400'}
-                                            ${uploading ? 'opacity-60 cursor-not-allowed' : ''}
-                                        `}
-                                    >
-                                        {formImageUrl ? (
-                                            <div className="relative w-full h-full overflow-hidden rounded-xl">
-                                                <img src={formImageUrl} alt="Preview" className="w-full h-full object-cover" />
-                                                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                                                    <span className="text-white text-sm font-medium">Click to change</span>
-                                                </div>
-                                            </div>
-                                        ) : uploading ? (
-                                            <div className="flex flex-col items-center gap-2">
-                                                <Loader2 size={28} className="text-[#223943] animate-spin" />
-                                                <span className="text-sm text-black font-medium">Uploading…</span>
-                                            </div>
-                                        ) : (
-                                            <div className="flex flex-col items-center gap-2">
-                                                <UploadCloud size={28} className="text-gray-400" />
-                                                <span className="text-sm text-black font-medium">Click to upload image</span>
-                                                <span className="text-xs text-gray-400">PNG, JPG, WEBP</span>
-                                            </div>
-                                        )}
-                                        <input ref={fileInputRef} type="file" className="hidden" accept="image/*" onChange={handleFileUpload} disabled={uploading} />
-                                    </div>
-                                    {formImageUrl && !uploading && (
-                                        <button type="button" onClick={() => setFormImageUrl('')} className="text-xs text-red-500 hover:text-red-600 font-medium mt-1">
-                                            Remove image
-                                        </button>
-                                    )}
-                                </div>
-
-                                {/* Actions */}
-                                <div className="flex gap-3 pt-2">
-                                    <button type="button" onClick={closeModal} disabled={loading || uploading} className="flex-1 px-6 py-3 rounded-xl border border-gray-200 text-black font-semibold hover:bg-gray-50 transition-colors disabled:opacity-50">Cancel</button>
-                                    <button type="submit" disabled={loading || uploading} className="flex-1 px-6 py-3 rounded-xl bg-[#223943] text-white font-semibold hover:bg-[#1b2d35] transition-colors flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg hover:shadow-xl">
-                                        {loading && <Loader2 size={16} className="animate-spin" />}
-                                        {loading ? 'Saving…' : (modal.type === 'style' ? (modal.edit ? 'Update Style' : 'Add Style') : (modal.edit ? 'Update Option' : 'Add Option'))}
-                                    </button>
-                                </div>
-                            </form>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-        </div>
-    );
+    {groupOpen&&<Modal title={editingGroup?"Edit Style Group":"Add Style Group"} close={()=>setGroupOpen(false)}><form onSubmit={saveGroup} className="grid gap-4 md:grid-cols-2">{error&&<ErrorText>{error}</ErrorText>}<Field label="Group Name"><input required className="input" value={groupForm.name} onChange={(e)=>setGroupForm({...groupForm,name:e.target.value})}/></Field><Field label="Product Type"><select className="input" value={groupForm.productType} onChange={(e)=>setGroupForm({...groupForm,productType:e.target.value as ProductType})}>{Object.entries(PRODUCT_TYPE_LABELS).map(([type,label])=><option key={type} value={type}>{label}</option>)}</select></Field><Field label="Group Type"><select className="input" value={groupForm.groupType} onChange={(e)=>setGroupForm({...groupForm,groupType:e.target.value as GroupType})}>{groupTypes.map((type)=><option key={type}>{type}</option>)}</select></Field><Field label="Display Order"><input className="input" type="number" value={groupForm.displayOrder} onChange={(e)=>setGroupForm({...groupForm,displayOrder:e.target.value})}/></Field><Field label="Group Icon / Image"><button type="button" onClick={()=>{setUploadTarget("group");imageInput.current?.click();}} className="input text-left">{groupForm.imageUrl||"Upload thumbnail"}</button></Field><div className="space-y-2 pt-7"><Check label="Required" checked={groupForm.isRequired} onChange={(value)=>setGroupForm({...groupForm,isRequired:value})}/><Check label="Allow multiple" checked={groupForm.allowMultiple} onChange={(value)=>setGroupForm({...groupForm,allowMultiple:value})}/><Check label="Available" checked={groupForm.isAvailable} onChange={(value)=>setGroupForm({...groupForm,isAvailable:value})}/></div><Actions saving={saving} cancel={()=>setGroupOpen(false)} label="Save Group"/></form></Modal>}
+    {optionOpen&&optionStyle&&<Modal title={editingOption?`Edit ${optionStyle.name} Option`:`Add ${optionStyle.name} Option`} close={()=>setOptionOpen(false)}><form onSubmit={saveOption} className="grid gap-4 md:grid-cols-2">{error&&<ErrorText>{error}</ErrorText>}<Field label="Option Name"><input required className="input" value={optionForm.name} onChange={(e)=>setOptionForm({...optionForm,name:e.target.value})}/></Field><Field label="Additional Price (PKR)"><input className="input" min="0" step="0.01" type="number" value={optionForm.additionalPrice} onChange={(e)=>setOptionForm({...optionForm,additionalPrice:e.target.value})}/></Field><Field label="Selector Thumbnail"><button type="button" onClick={()=>{setUploadTarget("option");imageInput.current?.click();}} className="input text-left">{optionForm.imageUrl||"Upload JPG or PNG thumbnail"}</button></Field><Field label="Transparent Overlay PNG"><button type="button" onClick={()=>{setUploadTarget("overlay");imageInput.current?.click();}} className="input text-left">{optionForm.overlayImageUrl||"Upload 1080x1440 PNG"}</button></Field><Field label="Style Type"><select className="input" value={optionForm.styleType} onChange={(e)=>setOptionForm({...optionForm,styleType:e.target.value as typeof optionForm.styleType})}>{["COLLAR","CUFF","POCKET","BUTTON","OTHER"].map((type)=><option key={type}>{type}</option>)}</select></Field><Field label="Overlay Key"><input className="input" value={optionForm.overlayKey} onChange={(e)=>setOptionForm({...optionForm,overlayKey:e.target.value})}/></Field><Field label="Z-index"><input className="input" type="number" value={optionForm.zIndex} onChange={(e)=>setOptionForm({...optionForm,zIndex:e.target.value})}/></Field><Field label="Front Overlay Asset (legacy)"><input className="input" value={optionForm.frontOverlayAsset} onChange={(e)=>setOptionForm({...optionForm,frontOverlayAsset:e.target.value})}/></Field><Field label="Back Overlay Asset (legacy)"><input className="input" value={optionForm.backOverlayAsset} onChange={(e)=>setOptionForm({...optionForm,backOverlayAsset:e.target.value})}/></Field><Field label="Storage Type"><select className="input" value={optionForm.assetStorageType} onChange={(e)=>setOptionForm({...optionForm,assetStorageType:e.target.value as "LOCAL"|"REMOTE"})}><option value="LOCAL">Local Flutter asset</option><option value="REMOTE">Remote</option></select></Field><Field label="Display Order"><input className="input" type="number" value={optionForm.displayOrder} onChange={(e)=>setOptionForm({...optionForm,displayOrder:e.target.value})}/></Field><div className="space-y-2"><Check label="Default option" checked={optionForm.isDefault} onChange={(value)=>setOptionForm({...optionForm,isDefault:value})}/><Check label="Available" checked={optionForm.isAvailable} onChange={(value)=>setOptionForm({...optionForm,isAvailable:value})}/></div><Actions saving={saving} cancel={()=>setOptionOpen(false)} label="Save Option"/></form></Modal>}
+    <input ref={imageInput} hidden type="file" accept={uploadTarget==="overlay"?".png":".jpg,.jpeg,.png"} onChange={(e)=>upload(e.target.files?.[0])}/>
+  </div>;
 }
+
+function Badge({children}:{children:React.ReactNode}){return <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">{children}</span>}
+function Field({label,children}:{label:string;children:React.ReactNode}){return <label className="space-y-2"><span className="text-sm font-semibold">{label}</span>{children}</label>}
+function Check({label,checked,onChange}:{label:string;checked:boolean;onChange:(value:boolean)=>void}){return <label className="flex gap-2 text-sm"><input type="checkbox" checked={checked} onChange={(e)=>onChange(e.target.checked)}/>{label}</label>}
+function ErrorText({children}:{children:React.ReactNode}){return <p className="md:col-span-2 rounded-xl bg-red-50 p-3 text-red-700">{children}</p>}
+function Actions({saving,cancel,label}:{saving:boolean;cancel:()=>void;label:string}){return <div className="md:col-span-2 flex justify-end gap-3 border-t pt-5"><button type="button" onClick={cancel} className="rounded-xl border px-5 py-3">Cancel</button><button disabled={saving} className="rounded-xl bg-[#223943] px-6 py-3 font-bold text-white disabled:opacity-50">{saving?"Saving...":label}</button></div>}
+function Modal({title,close,children}:{title:string;close:()=>void;children:React.ReactNode}){return <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4"><div className="mx-auto my-5 max-w-3xl rounded-3xl bg-white shadow-2xl"><div className="flex justify-between rounded-t-3xl bg-[#223943] p-6 text-white"><h2 className="text-xl font-bold">{title}</h2><button onClick={close}><X/></button></div><div className="p-7">{children}</div></div></div>}

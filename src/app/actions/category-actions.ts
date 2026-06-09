@@ -1,104 +1,152 @@
-'use server';
+"use server";
 
-import { prisma } from '@/lib/prisma';
-import { revalidatePath } from 'next/cache';
-import { notifyAdminOnTailorItemAdd } from './notification-actions';
+import { Prisma, Role } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { revalidatePath } from "next/cache";
+import { notifyAdminOnTailorItemAdd } from "./notification-actions";
+import { controlledCategory } from "@/lib/catalog-rules";
+
+async function normalizeCategory(
+  name: string,
+  code: string,
+  ownerId: number | null
+) {
+  if (!name || !code) throw new Error("Name and Code are required");
+  if (!ownerId) return { name: name.trim(), code: code.trim().toUpperCase() };
+
+  const owner = await prisma.user.findUnique({
+    where: { id: ownerId },
+    select: { role: true },
+  });
+  if (!owner) throw new Error("Category owner not found");
+  if (owner.role !== Role.TAILOR) {
+    return { name: name.trim(), code: code.trim().toUpperCase() };
+  }
+
+  const controlled = controlledCategory(code.trim().toUpperCase());
+  if (!controlled) {
+    throw new Error(
+      "Tailors can only add SHALWAR KAMEEZ, T SHIRT, PANTS, or FORMAL SHIRT"
+    );
+  }
+  return { name: controlled.name, code: controlled.code };
+}
 
 export async function createCategory(formData: FormData) {
-    try {
-        const name = formData.get('name') as string;
-        const code = formData.get('code') as string;
-        const imageUrl = formData.get('imageUrl') as string || '';
+  try {
+    const ownerId = formData.get("userId")
+      ? Number(formData.get("userId"))
+      : null;
+    const normalized = await normalizeCategory(
+      String(formData.get("name") ?? ""),
+      String(formData.get("code") ?? ""),
+      ownerId
+    );
+    const category = await prisma.category.create({
+      data: {
+        ...normalized,
+        imageUrl: String(formData.get("imageUrl") ?? ""),
+        userId: ownerId,
+      },
+    });
 
-        const userIdRaw = formData.get('userId');
-        const userId = userIdRaw ? parseInt(userIdRaw as string) : null;
-
-        if (!name || !code) {
-            return { success: false, error: 'Name and Code are required' };
-        }
-
-        const newCategory = await (prisma.category as any).create({
-            data: {
-                name,
-                code,
-                imageUrl,
-                userId
-            }
-        });
-
-        if (userId) {
-            await notifyAdminOnTailorItemAdd(userId, 'Category', name);
-        }
-
-        revalidatePath('/dashboard/categories');
-        return { success: true, data: newCategory };
-    } catch (error: any) {
-        console.error('Failed to create category:', error);
-        if (error.code === 'P2002') {
-            return { success: false, error: 'Category code already exists' };
-        }
-        return { success: false, error: 'Failed to create category: ' + error.message };
+    if (ownerId) {
+      await notifyAdminOnTailorItemAdd(ownerId, "Category", category.name);
     }
+    revalidatePath("/dashboard/categories");
+    return { success: true, data: category };
+  } catch (error: unknown) {
+    console.error("Failed to create category:", error);
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return {
+        success: false,
+        error: "This category already exists in your catalog",
+      };
+    }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to create category",
+    };
+  }
 }
 
 export async function getCategories(role?: string, userId?: number) {
-    try {
-        const whereClause = role === 'tailor' && userId ? { userId } : {};
-        const includeUser = role === 'admin' ? { user: { select: { name: true, shopProfile: { select: { shopName: true } } } } } : undefined;
-
-        const categories = await (prisma.category as any).findMany({
-            where: whereClause,
-            orderBy: {
-                createdAt: 'desc'
-            },
-            include: includeUser
-        });
-        return { success: true, data: categories };
-    } catch (error: any) {
-        console.error('Failed to fetch categories:', error);
-        return { success: false, error: 'Failed to fetch categories' };
-    }
+  try {
+    const categories = await prisma.category.findMany({
+      where: role === "tailor" && userId ? { userId } : {},
+      orderBy: { createdAt: "desc" },
+      include:
+        role === "admin"
+          ? {
+              user: {
+                select: {
+                  name: true,
+                  shopProfile: { select: { shopName: true } },
+                },
+              },
+            }
+          : undefined,
+    });
+    return { success: true, data: categories };
+  } catch (error) {
+    console.error("Failed to fetch categories:", error);
+    return { success: false, error: "Failed to fetch categories" };
+  }
 }
 
 export async function updateCategory(id: number, formData: FormData) {
-    try {
-        const name = formData.get('name') as string;
-        const code = formData.get('code') as string;
-        const imageUrl = formData.get('imageUrl') as string || '';
+  try {
+    const existing = await prisma.category.findUnique({
+      where: { id },
+      select: { userId: true },
+    });
+    if (!existing) return { success: false, error: "Category not found" };
 
-        if (!name || !code) {
-            return { success: false, error: 'Name and Code are required' };
-        }
-
-        const updated = await (prisma.category as any).update({
-            where: { id },
-            data: {
-                name,
-                code,
-                imageUrl,
-            }
-        });
-
-        revalidatePath('/dashboard/categories');
-        return { success: true, data: updated };
-    } catch (error: any) {
-        console.error('Failed to update category:', error);
-        if (error.code === 'P2002') {
-            return { success: false, error: 'Category code already exists' };
-        }
-        return { success: false, error: 'Failed to update category: ' + error.message };
+    const normalized = await normalizeCategory(
+      String(formData.get("name") ?? ""),
+      String(formData.get("code") ?? ""),
+      existing.userId
+    );
+    const category = await prisma.category.update({
+      where: { id },
+      data: {
+        ...normalized,
+        imageUrl: String(formData.get("imageUrl") ?? ""),
+      },
+    });
+    revalidatePath("/dashboard/categories");
+    return { success: true, data: category };
+  } catch (error: unknown) {
+    console.error("Failed to update category:", error);
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return {
+        success: false,
+        error: "This category already exists in your catalog",
+      };
     }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to update category",
+    };
+  }
 }
 
 export async function deleteCategory(id: number) {
-    try {
-        await (prisma.category as any).delete({
-            where: { id }
-        });
-        revalidatePath('/dashboard/categories');
-        return { success: true };
-    } catch (error: any) {
-        console.error('Failed to delete category:', error);
-        return { success: false, error: 'Cannot delete category because it is in use.' };
-    }
+  try {
+    await prisma.category.delete({ where: { id } });
+    revalidatePath("/dashboard/categories");
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to delete category:", error);
+    return {
+      success: false,
+      error: "Cannot delete category because it is in use.",
+    };
+  }
 }

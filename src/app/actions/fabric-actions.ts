@@ -1,97 +1,124 @@
-'use server';
+"use server";
 
-import { prisma } from '@/lib/prisma';
-import { revalidatePath } from 'next/cache';
-import { notifyAdminOnTailorItemAdd } from './notification-actions';
+import { Prisma, ProductType } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { revalidatePath } from "next/cache";
+import { notifyAdminOnTailorItemAdd } from "./notification-actions";
+import { fabricInputSchema } from "@/lib/catalog-validation";
 
-function serialize<T>(data: T): T {
-    return JSON.parse(JSON.stringify(data, (_key, value) =>
-        typeof value === 'object' && value !== null && value.constructor?.name === 'Decimal'
-            ? Number(value)
-            : value
-    ));
+function serialize<T>(value: T): T {
+  return JSON.parse(
+    JSON.stringify(value, (_key, item) =>
+      item?.constructor?.name === "Decimal" ? item.toString() : item
+    )
+  );
+}
+
+function parseFabric(formData: FormData) {
+  let productTypes: ProductType[] = [];
+  try {
+    productTypes = JSON.parse(String(formData.get("productTypes") ?? "[]"));
+  } catch {}
+  return fabricInputSchema.safeParse({
+    name: formData.get("name"),
+    categoryId: formData.get("categoryId"),
+    description: formData.get("description") || null,
+    imageUrl: formData.get("imageUrl"),
+    textureUrl: formData.get("textureUrl") || null,
+    textureStorageType: formData.get("textureStorageType") || "REMOTE",
+    isSeamlessTexture: formData.get("isSeamlessTexture") === "true",
+    price: formData.get("price") || "0.00",
+    priceAdjustment: formData.get("priceAdjustment") || "0.00",
+    stockQuantity: formData.get("stockQuantity") || 0,
+    lowStockLimit: formData.get("lowStockLimit") || 0,
+    unit: "METER",
+    productTypes,
+    isAvailable: formData.get("isAvailable") !== "false",
+  });
 }
 
 export async function createFabric(formData: FormData) {
-    try {
-        const name = formData.get('name') as string;
-        const imageUrl = formData.get('imageUrl') as string || '';
-        const price = parseFloat(formData.get('price') as string);
-        const categoryId = parseInt(formData.get('categoryId') as string);
-
-        const userIdRaw = formData.get('userId');
-        const userId = userIdRaw ? parseInt(userIdRaw as string) : null;
-
-        if (!name || isNaN(price) || isNaN(categoryId)) {
-            return { success: false, error: 'Name, Price, and Category are required' };
-        }
-
-        const newFabric = await (prisma.fabric as any).create({
-            data: { name, imageUrl, price, categoryId, userId },
-            include: { category: true },
-        });
-
-        if (userId) {
-            await notifyAdminOnTailorItemAdd(userId, 'Fabric', name);
-        }
-
-        revalidatePath('/dashboard/fabrics');
-        return { success: true, data: serialize(newFabric) };
-    } catch (error: any) {
-        console.error('Failed to create fabric:', error);
-        return { success: false, error: 'Failed to create fabric: ' + error.message };
-    }
+  try {
+    const parsed = parseFabric(formData);
+    if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message };
+    const userId = formData.get("userId") ? Number(formData.get("userId")) : null;
+    const { productTypes, ...data } = parsed.data;
+    const fabric = await prisma.$transaction(async (tx) => {
+      const created = await tx.fabric.create({ data: { ...data, userId } });
+      await tx.fabricCompatibility.createMany({
+        data: productTypes.map((productType) => ({ fabricId: created.id, productType })),
+      });
+      return tx.fabric.findUniqueOrThrow({
+        where: { id: created.id },
+        include: { category: true, compatibleTypes: true },
+      });
+    });
+    if (userId) await notifyAdminOnTailorItemAdd(userId, "Fabric", fabric.name);
+    revalidatePath("/dashboard/fabrics");
+    return { success: true, data: serialize(fabric) };
+  } catch (error) {
+    console.error("Failed to create fabric:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Failed to create fabric" };
+  }
 }
 
 export async function getFabrics(role?: string, userId?: number) {
-    try {
-        const whereClause = role === 'tailor' && userId ? { userId } : {};
-        const includeUser = role === 'admin' ? { user: { select: { name: true, shopProfile: { select: { shopName: true } } } } } : undefined;
-
-        const fabrics = await (prisma.fabric as any).findMany({
-            where: whereClause,
-            orderBy: { createdAt: 'desc' },
-            include: { category: true, ...includeUser },
-        });
-        return { success: true, data: serialize(fabrics) };
-    } catch (error: any) {
-        console.error('Failed to fetch fabrics:', error);
-        return { success: false, error: 'Failed to fetch fabrics' };
-    }
+  try {
+    const fabrics = await prisma.fabric.findMany({
+      where: role === "tailor" && userId ? { userId } : {},
+      include: {
+        category: true,
+        compatibleTypes: true,
+        _count: { select: { supportedProducts: true } },
+        ...(role === "admin"
+          ? { user: { select: { name: true, shopProfile: { select: { shopName: true } } } } }
+          : {}),
+      },
+      orderBy: { name: "asc" },
+    });
+    return { success: true, data: serialize(fabrics) };
+  } catch (error) {
+    console.error("Failed to fetch fabrics:", error);
+    return { success: false, error: "Failed to fetch fabrics" };
+  }
 }
 
 export async function updateFabric(id: number, formData: FormData) {
-    try {
-        const name = formData.get('name') as string;
-        const imageUrl = formData.get('imageUrl') as string || '';
-        const price = parseFloat(formData.get('price') as string);
-        const categoryId = parseInt(formData.get('categoryId') as string);
-
-        if (!name || isNaN(price) || isNaN(categoryId)) {
-            return { success: false, error: 'Name, Price, and Category are required' };
-        }
-
-        const updated = await (prisma.fabric as any).update({
-            where: { id },
-            data: { name, imageUrl, price, categoryId },
-            include: { category: true },
-        });
-
-        revalidatePath('/dashboard/fabrics');
-        return { success: true, data: serialize(updated) };
-    } catch (error: any) {
-        console.error('Failed to update fabric:', error);
-        return { success: false, error: 'Failed to update fabric: ' + error.message };
-    }
+  try {
+    const parsed = parseFabric(formData);
+    if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message };
+    const { productTypes, ...data } = parsed.data;
+    const fabric = await prisma.$transaction(async (tx) => {
+      await tx.fabric.update({ where: { id }, data });
+      await tx.fabricCompatibility.deleteMany({ where: { fabricId: id } });
+      await tx.fabricCompatibility.createMany({
+        data: productTypes.map((productType) => ({ fabricId: id, productType })),
+      });
+      return tx.fabric.findUniqueOrThrow({
+        where: { id },
+        include: { category: true, compatibleTypes: true },
+      });
+    });
+    revalidatePath("/dashboard/fabrics");
+    return { success: true, data: serialize(fabric) };
+  } catch (error) {
+    console.error("Failed to update fabric:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Failed to update fabric" };
+  }
 }
 
 export async function deleteFabric(id: number) {
-    try {
-        await (prisma.fabric as any).delete({ where: { id } });
-        revalidatePath('/dashboard/fabrics');
-        return { success: true };
-    } catch (error: any) {
-        console.error('Failed to delete fabric:', error);
-        return { success: false, error: 'Cannot delete fabric because it is in use by orders.' };
+  try {
+    if (await prisma.order.count({ where: { fabricId: id } })) {
+      return { success: false, error: "Fabric is used by orders. Mark it unavailable instead." };
     }
+    await prisma.fabric.delete({ where: { id } });
+    revalidatePath("/dashboard/fabrics");
+    return { success: true };
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      return { success: false, error: "Fabric is still referenced by catalog data." };
+    }
+    return { success: false, error: "Failed to delete fabric" };
+  }
 }

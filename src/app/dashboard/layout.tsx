@@ -6,7 +6,7 @@ import Header from "@/components/Header";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
     return (
-        <div className="flex min-h-screen bg-[#F3F4F6] dark:bg-[#0c1418] text-slate-900 dark:text-gray-100 transition-colors duration-300">
+        <div className="flex min-h-screen min-w-0 bg-[#F3F4F6] text-slate-900 transition-colors duration-300 dark:bg-[#0c1418] dark:text-gray-100">
             {/* 
         This is our Sidebar Component.
         It handles its own state (mobile open/close) and responsiveness.
@@ -19,9 +19,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
          On mobile, the sidebar is fixed/overlay, so we don't need margin-left.
          On desktop, sidebar is relative/static so it naturally pushes content.
       */}
-            <main className="flex-1 flex flex-col transition-all duration-300">
+            <main className="flex min-w-0 flex-1 flex-col overflow-x-hidden transition-all duration-300">
                 <Header />
-                <div className="flex-1 p-6 md:p-12">
+                <div className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8 xl:p-10">
                     {children}
                 </div>
             </main>

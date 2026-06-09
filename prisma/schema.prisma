@@ -62,6 +62,49 @@ enum NotificationType {
   SYSTEM
 }
 
+enum ProductType {
+  SHALWAR_KAMEEZ
+  T_SHIRT
+  PANTS
+  FORMAL_SHIRT
+}
+
+enum Gender {
+  MEN
+}
+
+enum PreviewView {
+  FRONT
+  BACK
+}
+
+enum StyleGroupType {
+  COLLAR
+  NECK
+  SLEEVE
+  CUFF
+  POCKET
+  PLACKET
+  FIT
+  SHALWAR_STYLE
+  WAIST
+  FRONT
+  BOTTOM
+}
+
+enum AssetStorageType {
+  LOCAL
+  REMOTE
+}
+
+enum StyleType {
+  COLLAR
+  CUFF
+  POCKET
+  BUTTON
+  OTHER
+}
+
 // ─────────────────────────────────────────────
 // USER & SHOP
 // ─────────────────────────────────────────────
@@ -164,7 +207,7 @@ model Address {
   updatedAt   DateTime @updatedAt
 
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  orders   Order[]  // orders delivered to this address
+  orders   Order[] // orders delivered to this address
 
   @@index([customerId])
   @@map("addresses")
@@ -177,7 +220,7 @@ model Address {
 model Category {
   id        Int      @id @default(autoincrement())
   name      String   @db.VarChar(80)
-  code      String   @unique @db.VarChar(20)
+  code      String   @db.VarChar(20)
   imageUrl  String   @db.VarChar(500)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -188,6 +231,7 @@ model Category {
   fabrics  Fabric[]
   designs  Design[]
 
+  @@unique([userId, code])
   @@map("categories")
 }
 
@@ -209,45 +253,76 @@ model Design {
 }
 
 model Product {
-  id          Int      @id @default(autoincrement())
-  categoryId  Int
-  name        String   @db.VarChar(120)
-  code        String   @unique @db.VarChar(30)
-  imageUrl    String   @db.VarChar(500)
-  basePrice   Decimal  @db.Decimal(10, 2)
+  id                 Int              @id @default(autoincrement())
+  categoryId         Int
+  name               String           @db.VarChar(120)
+  code               String           @unique @db.VarChar(30)
+  imageUrl           String           @db.VarChar(500)
+  thumbnailUrl       String?          @db.VarChar(500)
+  modelImageUrl      String?          @db.VarChar(500)
+  topOverlayUrl      String?          @db.VarChar(500)
+  bottomOverlayUrl   String?          @db.VarChar(500)
+  overlayKey         String?          @db.VarChar(100)
+  previewEnabled     Boolean          @default(false)
+  basePrice          Decimal          @db.Decimal(10, 2)
+  description        String?          @db.Text
+  productType        ProductType?
+  gender             Gender           @default(MEN)
+  previewType        String?          @db.VarChar(50)
+  frontPreviewAsset  String?          @db.VarChar(500)
+  backPreviewAsset   String?          @db.VarChar(500)
+  previewStorageType AssetStorageType @default(LOCAL)
+  estimatedDays      Int?
+  measurementProfile String?          @db.VarChar(50)
+  isFeatured         Boolean          @default(false)
+  displayOrder       Int              @default(0)
   // ── NEW: mark product as available/unavailable for ordering
-  isAvailable Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  userId      Int?
+  isAvailable        Boolean          @default(true)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  userId             Int?
 
-  user     User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  fabrics  Fabric[]
-  orders   Order[]
+  user             User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  category         Category              @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  fabrics          Fabric[]
+  supportedFabrics ProductFabric[]
+  supportedColors  ProductColor[]
+  supportedStyles  ProductStyle[]
+  previewAssets    ProductPreviewAsset[]
+  orders           Order[]
 
   @@index([categoryId])
+  @@index([productType, isAvailable])
+  @@index([displayOrder])
   @@map("products")
 }
 
 model Fabric {
-  id           Int      @id @default(autoincrement())
-  categoryId   Int
-  name         String   @db.VarChar(100)
-  imageUrl     String   @db.VarChar(500)
-  price        Decimal  @db.Decimal(8, 2)
+  id                 Int              @id @default(autoincrement())
+  categoryId         Int
+  name               String           @db.VarChar(100)
+  imageUrl           String           @db.VarChar(500)
+  price              Decimal          @db.Decimal(8, 2)
   // ── NEW: inventory / stock tracking fields
-  stockQuantity Int     @default(0)   // current stock in meters/units
-  lowStockLimit Int     @default(5)   // alert threshold
-  isAvailable   Boolean @default(true) // hide from catalog when out of stock
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  userId       Int?
+  stockQuantity      Int              @default(0) // current stock in meters/units
+  lowStockLimit      Int              @default(5) // alert threshold
+  isAvailable        Boolean          @default(true) // hide from catalog when out of stock
+  description        String?          @db.Text
+  textureUrl         String?          @db.VarChar(500)
+  textureStorageType AssetStorageType @default(REMOTE)
+  priceAdjustment    Decimal          @default(0.00) @db.Decimal(8, 2)
+  unit               String           @default("METER") @db.VarChar(20)
+  isSeamlessTexture  Boolean          @default(false)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  userId             Int?
 
-  user     User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  products Product[]
-  orders   Order[]
+  user              User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  category          Category              @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  products          Product[]
+  supportedProducts ProductFabric[]
+  compatibleTypes   FabricCompatibility[]
+  orders            Order[]
 
   @@index([categoryId])
   @@map("fabrics")
@@ -258,47 +333,147 @@ model Fabric {
 // ─────────────────────────────────────────────
 
 model Color {
-  id        Int      @id @default(autoincrement())
-  name      String   @db.VarChar(60)
-  hexCode   String   @db.Char(7) // #RRGGBB format
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  userId    Int?
+  id           Int      @id @default(autoincrement())
+  name         String   @db.VarChar(60)
+  hexCode      String   @db.Char(7) // #RRGGBB format
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  userId       Int?
+  isAvailable  Boolean  @default(true)
+  displayOrder Int      @default(0)
 
-  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
-  orders Order[]
+  user              User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  supportedProducts ProductColor[]
+  orders            Order[]
 
+  @@unique([userId, hexCode])
+  @@index([isAvailable, displayOrder])
   @@map("colors")
 }
 
 model Style {
-  id        Int      @id @default(autoincrement())
-  name      String   @db.VarChar(80)
-  imageUrl  String   @db.VarChar(500)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  userId    Int?
+  id            Int             @id @default(autoincrement())
+  name          String          @db.VarChar(80)
+  imageUrl      String?         @db.VarChar(500)
+  productType   ProductType?
+  groupType     StyleGroupType?
+  isRequired    Boolean         @default(false)
+  allowMultiple Boolean         @default(false)
+  displayOrder  Int             @default(0)
+  isAvailable   Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  userId        Int?
 
   user    User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   options StyleOption[]
 
+  @@index([productType, groupType, isAvailable])
   @@map("styles")
 }
 
 model StyleOption {
-  id              Int      @id @default(autoincrement())
-  styleId         Int
-  name            String   @db.VarChar(100)
-  imageUrl        String   @db.VarChar(500)
-  additionalPrice Decimal  @default(0.00) @db.Decimal(8, 2)
+  id                Int              @id @default(autoincrement())
+  styleId           Int
+  name              String           @db.VarChar(100)
+  imageUrl          String           @db.VarChar(500)
+  additionalPrice   Decimal          @default(0.00) @db.Decimal(8, 2)
+  overlayKey        String?          @db.VarChar(100)
+  overlayImageUrl   String?          @db.VarChar(500)
+  styleType         StyleType?
+  zIndex            Int              @default(30)
+  frontOverlayAsset String?          @db.VarChar(500)
+  backOverlayAsset  String?          @db.VarChar(500)
+  assetStorageType  AssetStorageType @default(LOCAL)
+  isDefault         Boolean          @default(false)
+  isAvailable       Boolean          @default(true)
+  displayOrder      Int              @default(0)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  style             Style          @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  orderStyles       OrderStyle[]
+  supportedProducts ProductStyle[]
+
+  @@index([styleId])
+  @@index([isAvailable, displayOrder])
+  @@map("style_options")
+}
+
+model ProductFabric {
+  productId       Int
+  fabricId        Int
+  isDefault       Boolean  @default(false)
+  priceAdjustment Decimal  @default(0.00) @db.Decimal(8, 2)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  style       Style        @relation(fields: [styleId], references: [id], onDelete: Cascade)
-  orderStyles OrderStyle[]
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  fabric  Fabric  @relation(fields: [fabricId], references: [id], onDelete: Cascade)
 
-  @@index([styleId])
-  @@map("style_options")
+  @@id([productId, fabricId])
+  @@index([fabricId])
+  @@map("product_fabrics")
+}
+
+model FabricCompatibility {
+  fabricId    Int
+  productType ProductType
+  createdAt   DateTime    @default(now())
+
+  fabric Fabric @relation(fields: [fabricId], references: [id], onDelete: Cascade)
+
+  @@id([fabricId, productType])
+  @@index([productType])
+  @@map("fabric_compatibilities")
+}
+
+model ProductColor {
+  productId Int
+  colorId   Int
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  color   Color   @relation(fields: [colorId], references: [id], onDelete: Cascade)
+
+  @@id([productId, colorId])
+  @@index([colorId])
+  @@map("product_colors")
+}
+
+model ProductStyle {
+  productId     Int
+  styleOptionId Int
+  isDefault     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  product     Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  styleOption StyleOption @relation(fields: [styleOptionId], references: [id], onDelete: Cascade)
+
+  @@id([productId, styleOptionId])
+  @@index([styleOptionId])
+  @@map("product_styles")
+}
+
+model ProductPreviewAsset {
+  id          Int              @id @default(autoincrement())
+  productId   Int
+  view        PreviewView
+  assetKey    String           @db.VarChar(100)
+  assetUrl    String           @db.VarChar(500)
+  storageType AssetStorageType @default(LOCAL)
+  width       Int?
+  height      Int?
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, view, assetKey])
+  @@index([productId])
+  @@map("product_preview_assets")
 }
 
 // ─────────────────────────────────────────────
@@ -309,12 +484,12 @@ model Measurement {
   id              Int              @id @default(autoincrement())
   label           String           @db.VarChar(50) // S, M, L, XL, Custom name…
   // ── EXISTING shirt fields
-  neck            Decimal          @db.Decimal(5, 2)
-  chest           Decimal          @db.Decimal(5, 2)
-  stomach         Decimal          @db.Decimal(5, 2)
-  length          Decimal          @db.Decimal(5, 2) // shirt / dress length
-  shoulder        Decimal          @db.Decimal(5, 2)
-  sleeve          Decimal          @db.Decimal(5, 2)
+  neck            Decimal?         @db.Decimal(5, 2)
+  chest           Decimal?         @db.Decimal(5, 2)
+  stomach         Decimal?         @db.Decimal(5, 2)
+  length          Decimal?         @db.Decimal(5, 2) // shirt / dress length
+  shoulder        Decimal?         @db.Decimal(5, 2)
+  sleeve          Decimal?         @db.Decimal(5, 2)
   // ── NEW: pants / bottom wear fields
   waist           Decimal?         @db.Decimal(5, 2) // optional – not needed for shirts
   hip             Decimal?         @db.Decimal(5, 2)
@@ -322,6 +497,9 @@ model Measurement {
   thigh           Decimal?         @db.Decimal(5, 2)
   // ── NEW: coat / sherwani specific
   coatLength      Decimal?         @db.Decimal(5, 2)
+  wrist           Decimal?         @db.Decimal(5, 2)
+  productType     ProductType?
+  profileName     String?          @db.VarChar(50)
   scale           MeasurementScale
   type            MeasurementType
   createdByUserId Int
@@ -359,6 +537,11 @@ model Order {
   referenceImageUrl     String?     @db.VarChar(500)
   // ── Payment method: STRIPE or COD
   paymentMethod         String      @default("STRIPE") @db.VarChar(20)
+  previewType           String?     @db.VarChar(50)
+  previewFrontUrl       String?     @db.VarChar(500)
+  previewBackUrl        String?     @db.VarChar(500)
+  customizationSnapshot Json?
+  previewGeneratedAt    DateTime?
   createdAt             DateTime    @default(now())
   updatedAt             DateTime    @updatedAt
 
@@ -462,13 +645,13 @@ model Notification {
 // Tracks all important admin/tailor actions for accountability.
 model AuditLog {
   id        Int      @id @default(autoincrement())
-  userId    Int?     // The user who performed the action (nullable for system actions)
-  userRole  String?  @db.VarChar(20)  // ADMIN | TAILOR
+  userId    Int? // The user who performed the action (nullable for system actions)
+  userRole  String?  @db.VarChar(20) // ADMIN | TAILOR
   action    String   @db.VarChar(100) // e.g. "UPDATE_ORDER_STATUS", "DELETE_FABRIC"
-  module    String   @db.VarChar(50)  // e.g. "Orders", "Fabrics", "Payments"
-  entityId  Int?     // ID of the record affected
-  oldValue  Json?    // Snapshot before change
-  newValue  Json?    // Snapshot after change
+  module    String   @db.VarChar(50) // e.g. "Orders", "Fabrics", "Payments"
+  entityId  Int? // ID of the record affected
+  oldValue  Json? // Snapshot before change
+  newValue  Json? // Snapshot after change
   ipAddress String?  @db.VarChar(50)
   createdAt DateTime @default(now())
 

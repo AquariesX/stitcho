@@ -18,6 +18,7 @@ export interface MeasurementInput {
   inseam?: number | null;
   thigh?: number | null;
   coatLength?: number | null;
+  wrist?: number | null;
   scale?: "INCH" | "CM";
 }
 
@@ -39,6 +40,7 @@ const RANGES_INCH = {
   inseam: { min: 22, max: 38, label: "Inseam" },
   thigh: { min: 15, max: 36, label: "Thigh" },
   coatLength: { min: 28, max: 56, label: "Coat Length" },
+  wrist: { min: 5, max: 12, label: "Wrist" },
 };
 
 // Convert inch ranges to cm (multiply by 2.54)
@@ -75,6 +77,7 @@ export function validateMeasurements(input: MeasurementInput): ValidationResult 
     "inseam",
     "thigh",
     "coatLength",
+    "wrist",
   ] as const;
 
   for (const field of fields) {
@@ -99,5 +102,39 @@ export function validateMeasurements(input: MeasurementInput): ValidationResult 
   return {
     valid: warnings.length === 0,
     warnings,
+  };
+}
+
+const REQUIRED_BY_PRODUCT = {
+  T_SHIRT: ["neck", "chest", "length", "shoulder", "sleeve"],
+  FORMAL_SHIRT: ["neck", "chest", "stomach", "length", "shoulder", "sleeve"],
+  PANTS: ["waist", "hip", "inseam", "thigh"],
+  SHALWAR_KAMEEZ: [
+    "neck",
+    "chest",
+    "stomach",
+    "length",
+    "shoulder",
+    "sleeve",
+    "waist",
+    "hip",
+  ],
+} as const;
+
+export function validateMeasurementsForProduct(
+  productType: keyof typeof REQUIRED_BY_PRODUCT,
+  input: MeasurementInput
+): ValidationResult {
+  const result = validateMeasurements(input);
+  const missing = REQUIRED_BY_PRODUCT[productType].filter((field) => {
+    const value = input[field as keyof MeasurementInput];
+    return value === null || value === undefined;
+  });
+  return {
+    valid: result.valid && missing.length === 0,
+    warnings: [
+      ...result.warnings,
+      ...missing.map((field) => `${field} is required for ${productType}`),
+    ],
   };
 }

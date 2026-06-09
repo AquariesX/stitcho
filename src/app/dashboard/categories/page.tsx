@@ -10,6 +10,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '@/lib/firebase';
+import { CONTROLLED_CATEGORIES } from '@/lib/catalog-rules';
 
 interface Category {
     id: number;
@@ -93,8 +94,13 @@ export default function CategoriesPage() {
     // ── Modal helpers ──
     function openAddModal() {
         setEditCategory(null);
-        setFormName('');
-        setFormCode('');
+        if (role === 'tailor') {
+            setFormName(CONTROLLED_CATEGORIES[0].name);
+            setFormCode(CONTROLLED_CATEGORIES[0].code);
+        } else {
+            setFormName('');
+            setFormCode('');
+        }
         setFormImageUrl('');
         setError('');
         setModalOpen(true);
@@ -462,30 +468,58 @@ export default function CategoriesPage() {
                                     )}
                                 </AnimatePresence>
 
-                                {/* Name */}
-                                <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-black">Category Name</label>
-                                    <input
-                                        value={formName}
-                                        onChange={(e) => setFormName(e.target.value)}
-                                        required
-                                        placeholder="e.g. Men's Wear"
-                                        className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-black placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#223943] focus:bg-white transition-all"
-                                    />
-                                </div>
+                                {role === 'tailor' ? (
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-semibold text-black">Category</label>
+                                        <select
+                                            value={formCode}
+                                            onChange={(event) => {
+                                                const category = CONTROLLED_CATEGORIES.find(
+                                                    (item) => item.code === event.target.value
+                                                );
+                                                if (!category) return;
+                                                setFormCode(category.code);
+                                                setFormName(category.name);
+                                            }}
+                                            required
+                                            className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-black focus:outline-none focus:ring-2 focus:ring-[#223943] focus:bg-white transition-all"
+                                        >
+                                            {CONTROLLED_CATEGORIES.map((category) => (
+                                                <option key={category.code} value={category.code}>
+                                                    {category.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <p className="text-xs text-gray-500">
+                                            Tailor catalogs support only these four men&apos;s product categories.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-semibold text-black">Category Name</label>
+                                            <input
+                                                value={formName}
+                                                onChange={(e) => setFormName(e.target.value)}
+                                                required
+                                                placeholder="e.g. Men's Wear"
+                                                className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-black placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#223943] focus:bg-white transition-all"
+                                            />
+                                        </div>
 
-                                {/* Code */}
-                                <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-black">Category Code</label>
-                                    <input
-                                        value={formCode}
-                                        onChange={(e) => setFormCode(e.target.value.toUpperCase())}
-                                        required
-                                        placeholder="e.g. MEN"
-                                        className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-black uppercase font-mono placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#223943] focus:bg-white transition-all"
-                                    />
-                                    <p className="text-xs text-gray-500">Unique identifier code (auto-uppercased).</p>
-                                </div>
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-semibold text-black">Category Code</label>
+                                            <input
+                                                value={formCode}
+                                                onChange={(e) => setFormCode(e.target.value.toUpperCase())}
+                                                required
+                                                placeholder="e.g. MEN"
+                                                className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-black uppercase font-mono placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#223943] focus:bg-white transition-all"
+                                            />
+                                            <p className="text-xs text-gray-500">Unique identifier code within this catalog.</p>
+                                        </div>
+                                    </>
+                                )}
 
                                 {/* Image Upload */}
                                 <div className="space-y-2">

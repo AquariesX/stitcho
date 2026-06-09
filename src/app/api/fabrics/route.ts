@@ -1,51 +1,58 @@
-import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { NextRequest } from "next/server";
+import { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { apiError, apiSuccess, API_ERRORS } from "@/lib/api-response";
+import { verifyDashboardUser } from "@/lib/auth-helpers";
+import { fabricInputSchema, parseJsonBody } from "@/lib/catalog-validation";
 
-export async function GET(request: Request) {
-    try {
-        const { searchParams } = new URL(request.url);
-        const userId     = searchParams.get('userId');
-        const categoryId = searchParams.get('categoryId');
-        const productId  = searchParams.get('productId');
+export async function GET(request: NextRequest) {
+  const auth = await verifyDashboardUser(request);
+  if (auth.error || !auth.user) return apiError(API_ERRORS.FORBIDDEN, 403);
+  const productId = Number(new URL(request.url).searchParams.get("productId"));
+  const where: Prisma.FabricWhereInput =
+    auth.user.role === "TAILOR" ? { userId: auth.user.id } : {};
+  if (Number.isInteger(productId) && productId > 0) {
+    where.supportedProducts = { some: { productId } };
+  }
+  const fabrics = await prisma.fabric.findMany({
+    where,
+    include: {
+      category: true,
+      compatibleTypes: true,
+      _count: { select: { supportedProducts: true } },
+    },
+    orderBy: { name: "asc" },
+  });
+  return apiSuccess(fabrics);
+}
 
-        // When productId is supplied, return only fabrics linked to that product (M2M)
-        if (productId) {
-            const product = await (prisma as any).product.findUnique({
-                where: { id: parseInt(productId) },
-                include: {
-                    fabrics: {
-                        include: { category: true },
-                        orderBy: { createdAt: 'desc' },
-                    },
-                },
-            });
-
-            if (!product) {
-                return NextResponse.json(
-                    { success: false, error: 'Product not found' },
-                    { status: 404 }
-                );
-            }
-
-            return NextResponse.json({ success: true, data: product.fabrics });
-        }
-
-        // Otherwise filter by categoryId / userId
-        const whereClause: any = {};
-        if (userId)     whereClause.userId     = parseInt(userId);
-        if (categoryId) whereClause.categoryId = parseInt(categoryId);
-
-        const fabrics = await (prisma as any).fabric.findMany({
-            where: whereClause,
-            include: { category: true },
-            orderBy: { createdAt: 'desc' },
-        });
-
-        return NextResponse.json({ success: true, data: fabrics });
-    } catch (error: any) {
-        return NextResponse.json(
-            { success: false, error: error.message },
-            { status: 500 }
-        );
-    }
+export async function POST(request: NextRequest) {
+  const auth = await verifyDashboardUser(request);
+  if (auth.error || !auth.user) return apiError(API_ERRORS.FORBIDDEN, 403);
+  const parsed = parseJsonBody(fabricInputSchema, await request.json());
+  if (!parsed.success) return apiError(parsed.error, 400);
+  const { productTypes, ...data } = parsed.data;
+  const category = await prisma.category.findFirst({
+    where: {
+      id: data.categoryId,
+      ...(auth.user.role === "TAILOR" ? { userId: auth.user.id } : {}),
+    },
+  });
+  if (!category) return apiError("Category not found", 404);
+  const fabric = await prisma.$transaction(async (tx) => {
+    const created = await tx.fabric.create({
+      data: { ...data, userId: auth.user.id },
+    });
+    await tx.fabricCompatibility.createMany({
+      data: productTypes.map((productType) => ({
+        fabricId: created.id,
+        productType,
+      })),
+    });
+    return tx.fabric.findUniqueOrThrow({
+      where: { id: created.id },
+      include: { category: true, compatibleTypes: true },
+    });
+  });
+  return apiSuccess(fabric, 201);
 }

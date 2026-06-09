@@ -1,106 +1,161 @@
-'use server';
+"use server";
 
-import { prisma } from '@/lib/prisma';
-import { revalidatePath } from 'next/cache';
-import { notifyAdminOnTailorItemAdd } from './notification-actions';
+import { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { revalidatePath } from "next/cache";
+import { notifyAdminOnTailorItemAdd } from "./notification-actions";
+import { productWriteSchema } from "@/lib/catalog-validation";
+import {
+  CatalogValidationError,
+  createProductCatalog,
+  updateProductCatalog,
+} from "@/lib/catalog-management";
 
-// Convert Prisma Decimal objects to plain serializable values
-function serialize<T>(data: T): T {
-    return JSON.parse(JSON.stringify(data, (_key, value) =>
-        typeof value === 'object' && value !== null && value.constructor?.name === 'Decimal'
-            ? Number(value)
-            : value
-    ));
+function serialize<T>(value: T): T {
+  return JSON.parse(
+    JSON.stringify(value, (_key, item) =>
+      item?.constructor?.name === "Decimal" ? item.toString() : item
+    )
+  );
+}
+
+function json(formData: FormData, primary: string, legacy: string) {
+  try {
+    return JSON.parse(
+      String(formData.get(primary) ?? formData.get(legacy) ?? "[]")
+    );
+  } catch {
+    return [];
+  }
+}
+
+function parseProduct(formData: FormData) {
+  return productWriteSchema.safeParse({
+    name: formData.get("name"),
+    code: formData.get("code"),
+    imageUrl: formData.get("imageUrl"),
+    thumbnailUrl: formData.get("thumbnailUrl") || null,
+    modelImageUrl: formData.get("modelImageUrl") || null,
+    topOverlayUrl: formData.get("topOverlayUrl") || null,
+    bottomOverlayUrl: formData.get("bottomOverlayUrl") || null,
+    overlayKey: formData.get("overlayKey") || null,
+    previewEnabled: formData.get("previewEnabled") === "true",
+    basePrice: formData.get("basePrice"),
+    categoryId: formData.get("categoryId"),
+    description: formData.get("description") || null,
+    productType: formData.get("productType"),
+    previewType: formData.get("previewType") || null,
+    frontPreviewAsset: formData.get("frontPreviewAsset") || null,
+    backPreviewAsset: formData.get("backPreviewAsset") || null,
+    previewStorageType: formData.get("previewStorageType") || "LOCAL",
+    estimatedDays: formData.get("estimatedDays") || null,
+    measurementProfile: formData.get("measurementProfile") || null,
+    isAvailable: formData.get("isAvailable") !== "false",
+    isFeatured: formData.get("isFeatured") === "true",
+    displayOrder: formData.get("displayOrder") || 0,
+    userId: formData.get("userId") || null,
+    fabricSelections: json(formData, "fabricSelections", "fabrics"),
+    colorSelections: json(formData, "colorSelections", "colors"),
+    styleOptionSelections: json(formData, "styleOptionSelections", "styles"),
+  });
+}
+
+function owner(formData: FormData) {
+  const id = Number(formData.get("userId"));
+  const role = String(formData.get("role") ?? "TAILOR").toUpperCase();
+  return { id, role };
 }
 
 export async function createProduct(formData: FormData) {
-    try {
-        const name = formData.get('name') as string;
-        const code = formData.get('code') as string;
-        const imageUrl = formData.get('imageUrl') as string || '';
-        const basePrice = parseFloat(formData.get('basePrice') as string);
-        const categoryId = parseInt(formData.get('categoryId') as string);
-
-        const userIdRaw = formData.get('userId');
-        const userId = userIdRaw ? parseInt(userIdRaw as string) : null;
-
-        if (!name || !code || isNaN(basePrice) || isNaN(categoryId)) {
-            return { success: false, error: 'Name, Code, Base Price, and Category are required' };
-        }
-
-        const newProduct = await (prisma.product as any).create({
-            data: { name, code, imageUrl, basePrice, categoryId, userId },
-            include: { category: true },
-        });
-
-        if (userId) {
-            await notifyAdminOnTailorItemAdd(userId, 'Product', name);
-        }
-
-        revalidatePath('/dashboard/products');
-        return { success: true, data: serialize(newProduct) };
-    } catch (error: any) {
-        console.error('Failed to create product:', error);
-        if (error.code === 'P2002') {
-            return { success: false, error: 'Product code already exists' };
-        }
-        return { success: false, error: 'Failed to create product: ' + error.message };
+  const parsed = parseProduct(formData);
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message };
+  try {
+    const actor = owner(formData);
+    const product = await createProductCatalog(parsed.data, actor);
+    if (actor.id) await notifyAdminOnTailorItemAdd(actor.id, "Product", product.name);
+    revalidatePath("/dashboard/products");
+    return { success: true, data: serialize(product) };
+  } catch (error) {
+    if (error instanceof CatalogValidationError) {
+      return { success: false, error: error.message };
     }
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return { success: false, error: "Product code already exists" };
+    }
+    return { success: false, error: error instanceof Error ? error.message : "Failed to create product" };
+  }
 }
 
 export async function getProducts(role?: string, userId?: number) {
-    try {
-        const whereClause = role === 'tailor' && userId ? { userId } : {};
-        const includeUser = role === 'admin' ? { user: { select: { name: true, shopProfile: { select: { shopName: true } } } } } : undefined;
+  try {
+    const products = await prisma.product.findMany({
+      where: role === "tailor" && userId ? { userId } : {},
+      orderBy: [{ displayOrder: "asc" }, { createdAt: "desc" }],
+      include: {
+        category: true,
+        supportedFabrics: true,
+        supportedColors: true,
+        supportedStyles: true,
+        previewAssets: true,
+        ...(role === "admin"
+          ? { user: { select: { name: true, shopProfile: { select: { shopName: true } } } } }
+          : {}),
+      },
+    });
+    return { success: true, data: serialize(products) };
+  } catch {
+    return { success: false, error: "Failed to fetch products" };
+  }
+}
 
-        const products = await (prisma.product as any).findMany({
-            where: whereClause,
-            orderBy: { createdAt: 'desc' },
-            include: { category: true, ...includeUser },
-        });
-        return { success: true, data: serialize(products) };
-    } catch (error: any) {
-        console.error('Failed to fetch products:', error);
-        return { success: false, error: 'Failed to fetch products' };
-    }
+export async function getProductFormOptions(role?: string, userId?: number) {
+  const where = role === "tailor" && userId ? { userId } : {};
+  const [fabrics, colors, styles] = await Promise.all([
+    prisma.fabric.findMany({
+      where,
+      include: { compatibleTypes: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.color.findMany({
+      where,
+      orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
+    }),
+    prisma.style.findMany({
+      where,
+      include: { options: { orderBy: { displayOrder: "asc" } } },
+      orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
+    }),
+  ]);
+  return { success: true, data: serialize({ fabrics, colors, styles }) };
 }
 
 export async function updateProduct(id: number, formData: FormData) {
-    try {
-        const name = formData.get('name') as string;
-        const code = formData.get('code') as string;
-        const imageUrl = formData.get('imageUrl') as string || '';
-        const basePrice = parseFloat(formData.get('basePrice') as string);
-        const categoryId = parseInt(formData.get('categoryId') as string);
-
-        if (!name || !code || isNaN(basePrice) || isNaN(categoryId)) {
-            return { success: false, error: 'Name, Code, Base Price, and Category are required' };
-        }
-
-        const updated = await (prisma.product as any).update({
-            where: { id },
-            data: { name, code, imageUrl, basePrice, categoryId },
-            include: { category: true },
-        });
-
-        revalidatePath('/dashboard/products');
-        return { success: true, data: serialize(updated) };
-    } catch (error: any) {
-        console.error('Failed to update product:', error);
-        if (error.code === 'P2002') {
-            return { success: false, error: 'Product code already exists' };
-        }
-        return { success: false, error: 'Failed to update product: ' + error.message };
+  const parsed = parseProduct(formData);
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message };
+  try {
+    const product = await updateProductCatalog(id, parsed.data, owner(formData));
+    revalidatePath("/dashboard/products");
+    return { success: true, data: serialize(product) };
+  } catch (error) {
+    if (error instanceof CatalogValidationError) return { success: false, error: error.message };
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return { success: false, error: "Product code already exists" };
     }
+    return { success: false, error: error instanceof Error ? error.message : "Failed to update product" };
+  }
+}
+
+export async function setProductAvailability(id: number, isAvailable: boolean) {
+  await prisma.product.update({ where: { id }, data: { isAvailable } });
+  revalidatePath("/dashboard/products");
+  return { success: true };
 }
 
 export async function deleteProduct(id: number) {
-    try {
-        await (prisma.product as any).delete({ where: { id } });
-        revalidatePath('/dashboard/products');
-        return { success: true };
-    } catch (error: any) {
-        console.error('Failed to delete product:', error);
-        return { success: false, error: 'Cannot delete product because it is in use by orders.' };
-    }
+  if (await prisma.order.count({ where: { productId: id } })) {
+    return { success: false, error: "Product is used by orders. Mark it unavailable instead." };
+  }
+  await prisma.product.delete({ where: { id } });
+  revalidatePath("/dashboard/products");
+  return { success: true };
 }

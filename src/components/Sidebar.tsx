@@ -234,7 +234,7 @@ export default function Sidebar() {
       </div>
 
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex flex-col w-72 bg-[#223943] dark:bg-[#0c1418] border-r border-white/5 text-white shadow-2xl h-screen sticky top-0 overflow-hidden transition-colors duration-300">
+      <aside className="sticky top-0 hidden h-screen w-72 shrink-0 flex-col overflow-hidden border-r border-white/5 bg-[#223943] text-white shadow-2xl transition-colors duration-300 dark:bg-[#0c1418] md:flex">
         <SidebarContent
           menuItems={menuItems}
           role={role}
@@ -293,8 +293,8 @@ function SidebarContent({
   return (
     <>
       {/* Brand */}
-      <div className="p-6 border-b border-white/10 flex items-center gap-3">
-        <div className="w-10 h-10 bg-[#C8A96A]/20 rounded-full flex items-center justify-center">
+      <div className="flex shrink-0 items-center gap-3 border-b border-white/10 p-6">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#C8A96A]/20">
           <Scissors size={22} className="text-[#C8A96A]" />
         </div>
         <div>
@@ -303,7 +303,7 @@ function SidebarContent({
         </div>
       </div>
 
-      <nav className="p-4 space-y-1 flex-1 overflow-y-auto">
+      <nav className="min-w-0 flex-1 space-y-1 overflow-x-hidden overflow-y-auto p-4">
         {menuItems.map((item, index) => (
           <MenuItemComponent
             key={`${role}-${index}`}
@@ -315,14 +315,14 @@ function SidebarContent({
       </nav>
 
       {/* User profile snippet */}
-      <div className="p-4 border-t border-white/10">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-[#C8A96A]/20 flex items-center justify-center text-[#C8A96A] font-bold text-sm">
+      <div className="shrink-0 border-t border-white/10 p-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#C8A96A]/20 text-sm font-bold text-[#C8A96A]">
             {user?.name?.[0]?.toUpperCase() ?? "U"}
           </div>
-          <div className="overflow-hidden">
+          <div className="min-w-0 flex-1 overflow-hidden">
             <p className="text-sm font-semibold text-white truncate">{user?.name ?? "User"}</p>
-            <p className="text-xs text-white/40 truncate max-w-[30.5px]">{user?.email}</p>
+            <p className="truncate text-xs text-white/40">{user?.email}</p>
           </div>
         </div>
       </div>
