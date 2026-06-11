@@ -22,7 +22,7 @@ export type CustomerWithStatus = {
     lastSignInTime?: string;
 };
 
-export async function fetchAndSyncCustomers() {
+async function fetchAndSyncCustomers() {
     try {
         let firebaseUsers: UserRecord[] = [];
         let fetchedFromFirebase = false;

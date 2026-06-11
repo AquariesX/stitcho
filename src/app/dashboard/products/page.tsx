@@ -17,6 +17,11 @@ import { Eye, Loader2, Plus, Search, Trash2, UploadCloud, X } from "lucide-react
 import Image from "next/image";
 
 type ProductType = "SHALWAR_KAMEEZ" | "T_SHIRT" | "PANTS" | "FORMAL_SHIRT";
+type UploadTarget =
+  | "thumbnailUrl"
+  | "modelImageUrl"
+  | "topOverlayUrl"
+  | "bottomOverlayUrl";
 
 const PRODUCT_TYPES: Array<{ value: ProductType; label: string; preview: string }> = [
   { value: "SHALWAR_KAMEEZ", label: "Men's Shalwar Kameez", preview: "shalwar_qameez" },
@@ -24,6 +29,15 @@ const PRODUCT_TYPES: Array<{ value: ProductType; label: string; preview: string 
   { value: "PANTS", label: "Men's Pants", preview: "pants" },
   { value: "FORMAL_SHIRT", label: "Men's Formal Shirt", preview: "formal_shirt" },
 ];
+
+function localPreviewAssets(type: ProductType) {
+  const previewType = PRODUCT_TYPES.find((item) => item.value === type)!.preview;
+  return {
+    previewType,
+    frontPreviewAsset: `assets/previews/${previewType}/base/front.png`,
+    backPreviewAsset: `assets/previews/${previewType}/base/back.png`,
+  };
+}
 
 interface Category {
   id: number;
@@ -149,7 +163,7 @@ export default function ProductsPage() {
   const [fabricSearch, setFabricSearch] = useState("");
   const [colorSearch, setColorSearch] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
-  const [uploadTarget, setUploadTarget] = useState<"thumbnailUrl" | "modelImageUrl" | "topOverlayUrl" | "bottomOverlayUrl">("thumbnailUrl");
+  const uploadTarget = useRef<UploadTarget>("thumbnailUrl");
 
   const refreshOptions = useCallback(async () => {
     if (!user) return;
@@ -224,14 +238,13 @@ export default function ProductsPage() {
   );
 
   function applyType(type: ProductType) {
-    const preview = PRODUCT_TYPES.find((item) => item.value === type)!.preview;
+    const previewAssets = localPreviewAssets(type);
     setForm((current) => ({
       ...current,
       productType: type,
-      previewType: preview,
+      previewType: previewAssets.previewType,
       measurementProfile: type,
-      frontPreviewAsset: `assets/previews/${preview}/base/front.png`,
-      backPreviewAsset: `assets/previews/${preview}/base/back.png`,
+      ...(current.previewStorageType === "LOCAL" ? previewAssets : {}),
     }));
     setFabricSelections({});
     setStyleSelections({});
@@ -300,7 +313,16 @@ export default function ProductsPage() {
     void refreshOptions();
   }
 
-  async function validatePreviewPng(file: File) {
+  function openFilePicker(target: UploadTarget) {
+    uploadTarget.current = target;
+    if (!fileInput.current) return;
+    fileInput.current.accept =
+      target === "thumbnailUrl" ? ".jpg,.jpeg,.png" : ".png";
+    fileInput.current.value = "";
+    fileInput.current.click();
+  }
+
+  async function validatePreviewPng(file: File, target: UploadTarget) {
     if (file.type !== "image/png" && !file.name.toLowerCase().endsWith(".png")) {
       throw new Error("Model and overlay files must be PNG. JPG/JPEG is not allowed.");
     }
@@ -316,23 +338,25 @@ export default function ProductsPage() {
     context?.drawImage(bitmap, 0, 0);
     bitmap.close();
     const pixels = context?.getImageData(0, 0, canvas.width, canvas.height).data;
-    if (uploadTarget !== "modelImageUrl" && pixels && !pixels.some((value, index) => index % 4 === 3 && value < 255)) {
+    if (target !== "modelImageUrl" && pixels && !pixels.some((value, index) => index % 4 === 3 && value < 255)) {
       throw new Error("Overlay PNGs must contain transparent pixels.");
     }
   }
 
   async function uploadCatalogImage(file?: File) {
     if (!file) return;
+    const target = uploadTarget.current;
     setUploading(true);
+    setError("");
     try {
-      if (uploadTarget !== "thumbnailUrl") await validatePreviewPng(file);
-      if (uploadTarget === "thumbnailUrl" && !["image/jpeg", "image/png"].includes(file.type)) {
+      if (target !== "thumbnailUrl") await validatePreviewPng(file, target);
+      if (target === "thumbnailUrl" && !["image/jpeg", "image/png"].includes(file.type)) {
         throw new Error("Product thumbnails must be JPG or PNG.");
       }
-      const location = ref(storage, `product_images/${uploadTarget}/${Date.now()}_${file.name}`);
+      const location = ref(storage, `product_images/${target}/${Date.now()}_${file.name}`);
       await uploadBytes(location, file);
       const imageUrl = await getDownloadURL(location);
-      setForm((current) => ({ ...current, [uploadTarget]: imageUrl }));
+      setForm((current) => ({ ...current, [target]: imageUrl }));
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "Image upload failed.");
     } finally {
@@ -344,6 +368,10 @@ export default function ProductsPage() {
     event.preventDefault();
     setSaving(true);
     setError("");
+    const submittedForm =
+      form.previewStorageType === "LOCAL"
+        ? { ...form, ...localPreviewAssets(form.productType) }
+        : form;
     if (!form.thumbnailUrl && !form.imageUrl) {
       setSaving(false);
       return setError("Product thumbnail is required.");
@@ -364,7 +392,7 @@ export default function ProductsPage() {
       }
     }
     const data = new FormData();
-    Object.entries(form).forEach(([key, value]) => data.set(key, String(value)));
+    Object.entries(submittedForm).forEach(([key, value]) => data.set(key, String(value)));
     if (user?.id) data.set("userId", String(user.id));
     data.set("role", role ?? "tailor");
     data.set("fabrics", JSON.stringify(Object.entries(fabricSelections).map(([fabricId, value]) => ({ fabricId: Number(fabricId), ...value }))));
@@ -429,6 +457,12 @@ export default function ProductsPage() {
       {modalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4">
           <form onSubmit={submit} className="mx-auto my-6 max-w-4xl rounded-3xl bg-white shadow-2xl">
+            <input
+              ref={fileInput}
+              type="file"
+              className="hidden"
+              onChange={(event) => void uploadCatalogImage(event.target.files?.[0])}
+            />
             <div className="flex items-center justify-between rounded-t-3xl bg-[#223943] px-7 py-5 text-white">
               <h2 className="text-xl font-bold">{editing ? "Edit Product" : "Add Product"}</h2>
               <button type="button" onClick={() => setModalOpen(false)}><X /></button>
@@ -454,8 +488,7 @@ export default function ProductsPage() {
                 <Field label="Description"><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="input min-h-24" /></Field>
                 <Field label="Catalog Image">
                   <div className="flex items-center gap-3">
-                    <button type="button" onClick={() => { setUploadTarget("thumbnailUrl"); fileInput.current?.click(); }} className="flex items-center gap-2 rounded-xl border px-4 py-3"><UploadCloud size={18} /> {uploading ? "Uploading..." : "Upload product thumbnail"}</button>
-                    <input ref={fileInput} type="file" accept=".jpg,.jpeg,.png" className="hidden" onChange={(e) => uploadCatalogImage(e.target.files?.[0])} />
+                    <button type="button" onClick={() => openFilePicker("thumbnailUrl")} className="flex items-center gap-2 rounded-xl border px-4 py-3"><UploadCloud size={18} /> {uploading ? "Uploading..." : "Upload product thumbnail"}</button>
                     <input value={form.thumbnailUrl} onChange={(e) => setForm({ ...form, thumbnailUrl: e.target.value })} className="input flex-1" placeholder="Thumbnail URL (JPG or PNG)" />
                   </div>
                 </Field>
@@ -466,15 +499,25 @@ export default function ProductsPage() {
                 <h3 className="text-lg font-bold">B. Preview Configuration</h3>
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field label="Preview Type"><input readOnly value={form.previewType} className="input bg-gray-100" /></Field>
-                  <Field label="Storage Type"><select value={form.previewStorageType} onChange={(e) => setForm({ ...form, previewStorageType: e.target.value as "LOCAL" | "REMOTE" })} className="input"><option value="LOCAL">Local</option><option value="REMOTE">Remote</option></select></Field>
-                  <Field label="Front Preview Asset"><input value={form.frontPreviewAsset} onChange={(e) => setForm({ ...form, frontPreviewAsset: e.target.value })} className="input" /></Field>
-                  <Field label="Back Preview Asset"><input value={form.backPreviewAsset} onChange={(e) => setForm({ ...form, backPreviewAsset: e.target.value })} className="input" /></Field>
-                  <UploadField label="Base Male Model PNG" value={form.modelImageUrl} upload={() => { setUploadTarget("modelImageUrl"); fileInput.current?.click(); }} />
-                  <UploadField label="Bottom Clothing Overlay PNG" value={form.bottomOverlayUrl} upload={() => { setUploadTarget("bottomOverlayUrl"); fileInput.current?.click(); }} />
-                  <UploadField label="Top Clothing Overlay PNG" value={form.topOverlayUrl} upload={() => { setUploadTarget("topOverlayUrl"); fileInput.current?.click(); }} />
+                  <Field label="Front/Back Asset Storage"><select value={form.previewStorageType} onChange={(e) => {
+                    const previewStorageType = e.target.value as "LOCAL" | "REMOTE";
+                    setForm((current) => ({
+                      ...current,
+                      previewStorageType,
+                      ...(previewStorageType === "LOCAL"
+                        ? localPreviewAssets(current.productType)
+                        : {}),
+                    }));
+                  }} className="input"><option value="LOCAL">Local Flutter assets</option><option value="REMOTE">Remote URLs</option></select></Field>
+                  <Field label="Front Preview Asset"><input readOnly={form.previewStorageType === "LOCAL"} value={form.frontPreviewAsset} onChange={(e) => setForm({ ...form, frontPreviewAsset: e.target.value })} className={`input ${form.previewStorageType === "LOCAL" ? "bg-gray-100" : ""}`} /></Field>
+                  <Field label="Back Preview Asset"><input readOnly={form.previewStorageType === "LOCAL"} value={form.backPreviewAsset} onChange={(e) => setForm({ ...form, backPreviewAsset: e.target.value })} className={`input ${form.previewStorageType === "LOCAL" ? "bg-gray-100" : ""}`} /></Field>
+                  <UploadField label="Base Male Model PNG" value={form.modelImageUrl} upload={() => openFilePicker("modelImageUrl")} />
+                  <UploadField label="Bottom Clothing Overlay PNG" value={form.bottomOverlayUrl} upload={() => openFilePicker("bottomOverlayUrl")} />
+                  <UploadField label="Top Clothing Overlay PNG" value={form.topOverlayUrl} upload={() => openFilePicker("topOverlayUrl")} />
                   <Field label="Overlay Key"><input value={form.overlayKey} onChange={(e) => setForm({ ...form, overlayKey: e.target.value })} className="input" placeholder="kameez_classic" /></Field>
                 </div>
                 <Check label="Enable layered preview" checked={form.previewEnabled} onChange={(value) => setForm({ ...form, previewEnabled: value })} />
+                <p className="text-xs text-gray-500">Front/back assets are used by the mobile preview. The uploaded model and clothing layers below are Firebase URLs and do not use the front/back storage setting.</p>
                 <p className="text-xs text-gray-500">Preview assets must be transparent PNGs at 1080x1440. The base model may be opaque.</p>
                 <LayeredPreview model={form.modelImageUrl} bottom={form.bottomOverlayUrl} top={form.topOverlayUrl} styles={compatibleStyles.flatMap((style) => style.options.filter((option) => option.id in styleSelections && option.overlayImageUrl).map((option) => ({ imageUrl: option.overlayImageUrl!, zIndex: option.zIndex ?? 30 })))} />
               </section>}

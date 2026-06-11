@@ -14,7 +14,7 @@ interface EmailOptions {
   html: string;
 }
 
-export async function sendEmail({ to, subject, html }: EmailOptions) {
+async function sendEmail({ to, subject, html }: EmailOptions) {
   if (!SMTP_USER || !SMTP_PASS) {
     console.warn('SMTP credentials not configured. Email skipping...');
     // In development, we might just log the email content

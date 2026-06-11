@@ -148,23 +148,4 @@ export async function markAllNotificationsAsRead() {
     }
 }
 
-/**
- * Delete old notifications (older than 30 days). Useful for cleanup.
- */
-export async function deleteOldNotifications(daysOld: number = 30) {
-    try {
-        const cutoff = new Date();
-        cutoff.setDate(cutoff.getDate() - daysOld);
 
-        const result = await prisma.notification.deleteMany({
-            where: {
-                createdAt: { lt: cutoff },
-                isRead: true,
-            },
-        });
-        return { success: true, deleted: result.count };
-    } catch (error: any) {
-        console.error('Failed to delete old notifications:', error);
-        return { success: false, error: error.message };
-    }
-}
